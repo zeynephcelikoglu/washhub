@@ -7,9 +7,13 @@ import {
   FlatList,
   ActivityIndicator,
   Alert,
+  LayoutAnimation,
+  UIManager,
+  Platform,
 } from 'react-native';
 import { AuthContext } from '../../context/AuthContext';
 import { orderApi } from '../../api/orderApi';
+import SwipeableOrderCard from '../../components/SwipeableOrderCard';
 
 const UserOrdersScreen = () => {
   const { user } = useContext(AuthContext);
@@ -22,15 +26,42 @@ const UserOrdersScreen = () => {
     }
   }, [user?.id]);
 
+  // Enable LayoutAnimation for Android
+  useEffect(() => {
+    if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+      UIManager.setLayoutAnimationEnabledExperimental(true);
+    }
+  }, []);
+
   const fetchOrders = async () => {
     setLoading(true);
     try {
       const response = await orderApi.getOrdersByUser(user.id);
-      setOrders(response.data.orders || []);
+      const all = response.data.orders || [];
+      setOrders(all.filter(o => !o.hiddenForUser));
     } catch (error) {
       console.log('Siparişler yüklenemedi:', error);
     }
     setLoading(false);
+  };
+
+  const handleDeleteOrder = async (orderId) => {
+    try {
+      // call backend delete via orderApi
+      await orderApi.deleteOrder(orderId);
+
+      // smooth animation for list change
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+
+      // remove from local state without full reload
+      setOrders((prev) => prev.filter((o) => o._id !== orderId));
+
+      Alert.alert('Başarılı', 'Sipariş silindi');
+    } catch (error) {
+      console.log('Sipariş silinemedi:', error);
+      Alert.alert('Hata', 'Sipariş silinirken bir hata oluştu');
+      throw error;
+    }
   };
 
   const getStatusText = (status) => {
@@ -58,27 +89,43 @@ const UserOrdersScreen = () => {
   };
 
   const renderOrderItem = ({ item }) => (
-    <View style={styles.orderCard}>
-      <View style={styles.orderHeader}>
-        <Text style={styles.orderId}>Sipariş #{item._id?.slice(-6)}</Text>
-        <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status) }]}>
-          <Text style={styles.statusText}>{getStatusText(item.status)}</Text>
-        </View>
-      </View>
+    (() => {
+      const completedStatuses = ['delivered', 'cancelled'];
+      const card = (
+        <View style={styles.orderCard}>
+          <View style={styles.orderHeader}>
+            <Text style={styles.orderId}>Sipariş #{item._id?.slice(-6)}</Text>
+            <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status) }]}> 
+              <Text style={styles.statusText}>{getStatusText(item.status)}</Text>
+            </View>
+          </View>
 
-      <View style={styles.orderDetails}>
-        <Text style={styles.itemCount}>{item.items.length} öğe • {item.totalPrice} ₺</Text>
-        <Text style={styles.date}>
-          {new Date(item.pickupDate).toLocaleDateString('tr-TR')} - {item.pickupTime}
-        </Text>
-      </View>
+          <View style={styles.orderDetails}>
+            <Text style={styles.itemCount}>{item.items.length} öğe • {item.totalPrice} ₺</Text>
+            <Text style={styles.date}>
+              {new Date(item.pickupDate).toLocaleDateString('tr-TR')} - {item.pickupTime}
+            </Text>
+          </View>
 
-      {item.rating && (
-        <View style={styles.ratingRow}>
-          <Text style={styles.ratingText}>⭐ {item.rating.toFixed(1)}</Text>
+          {item.rating && (
+            <View style={styles.ratingRow}>
+              <Text style={styles.ratingText}>⭐ {item.rating.toFixed(1)}</Text>
+            </View>
+          )}
         </View>
-      )}
-    </View>
+      );
+
+      if (completedStatuses.includes(item.status)) {
+        return (
+          <SwipeableOrderCard orderId={item._id} onDelete={handleDeleteOrder}>
+            {card}
+          </SwipeableOrderCard>
+        );
+      }
+
+      // Active orders are not swipeable
+      return card;
+    })()
   );
 
   return (

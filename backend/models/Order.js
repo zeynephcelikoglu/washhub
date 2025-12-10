@@ -69,6 +69,19 @@ const orderSchema = new mongoose.Schema({
     max: 5,
     default: null
   },
+  // Soft-hide flags per role
+  hiddenForUser: {
+    type: Boolean,
+    default: false
+  },
+  hiddenForOwner: {
+    type: Boolean,
+    default: false
+  },
+  hiddenForCourier: {
+    type: Boolean,
+    default: false
+  },
   review: {
     type: String,
     default: null

@@ -27,4 +27,8 @@ export const orderApi = {
   
   rateOrder: (orderId, rating, review) => 
     api.patch(`/orders/${orderId}/rate`, { rating, review }),
+  deleteOrder: (orderId) =>
+    api.delete(`/orders/${orderId}`),
+  hideOrder: (orderId) =>
+    api.patch(`/orders/${orderId}/hide`),
 };

@@ -6,9 +6,14 @@ import {
   TouchableOpacity,
   FlatList,
   ActivityIndicator,
+  Alert,
+  LayoutAnimation,
+  UIManager,
+  Platform,
 } from 'react-native';
 import { AuthContext } from '../../context/AuthContext';
 import { orderApi } from '../../api/orderApi';
+import SwipeableOrderCard from '../../components/SwipeableOrderCard';
 
 const CourierOrdersScreen = ({ navigation, route }) => {
   const { user } = useContext(AuthContext);
@@ -39,6 +44,13 @@ const CourierOrdersScreen = ({ navigation, route }) => {
     return unsubscribe;
   }, [navigation]);
 
+  // Enable LayoutAnimation for Android
+  useEffect(() => {
+    if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+      UIManager.setLayoutAnimationEnabledExperimental(true);
+    }
+  }, []);
+
   const fetchOrders = async () => {
     setLoading(true);
     try {
@@ -48,6 +60,20 @@ const CourierOrdersScreen = ({ navigation, route }) => {
       console.log('Siparişler yüklenemedi:', error);
     }
     setLoading(false);
+  };
+
+  const handleDeleteOrder = async (orderId) => {
+    try {
+      await orderApi.hideOrder(orderId);
+
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      setOrders((prev) => prev.filter((o) => o._id !== orderId));
+
+      Alert.alert('Başarılı', 'Sipariş silindi');
+    } catch (error) {
+      console.log('Silinirken hata oluştu', error);
+      Alert.alert('Hata', 'Silinirken hata oluştu');
+    }
   };
 
   const getStatusText = (status) => {
@@ -60,32 +86,46 @@ const CourierOrdersScreen = ({ navigation, route }) => {
     return statusMap[status] || status;
   };
 
-  const renderOrderItem = ({ item }) => (
-    <TouchableOpacity
-      style={styles.orderCard}
-      onPress={() => navigation.navigate('CourierOrderDetail', { order: item })}
-    >
-      <View style={styles.orderHeader}>
-        <View>
-          <Text style={styles.orderId}>Sipariş #{item._id?.slice(-6)}</Text>
-          <Text style={styles.customerName}>{item.userId?.name}</Text>
+  const renderOrderItem = ({ item }) => {
+    const card = (
+      <TouchableOpacity
+        style={styles.orderCard}
+        onPress={() => navigation.navigate('CourierOrderDetail', { order: item })}
+      >
+        <View style={styles.orderHeader}>
+          <View>
+            <Text style={styles.orderId}>Sipariş #{item._id?.slice(-6)}</Text>
+            <Text style={styles.customerName}>{item.userId?.name}</Text>
+          </View>
+          <View style={styles.statusBadge}>
+            <Text style={styles.statusText}>{getStatusText(item.status)}</Text>
+          </View>
         </View>
-        <View style={styles.statusBadge}>
-          <Text style={styles.statusText}>{getStatusText(item.status)}</Text>
+
+        <View style={styles.orderDetails}>
+          <Text style={styles.itemCount}>{item.items?.length || 0} öğe</Text>
+          <Text style={styles.address}>{item.addressId?.title}</Text>
+          <Text style={styles.address}>{item.addressId?.street}</Text>
         </View>
-      </View>
 
-      <View style={styles.orderDetails}>
-        <Text style={styles.itemCount}>{item.items?.length || 0} öğe</Text>
-        <Text style={styles.address}>{item.addressId?.title}</Text>
-        <Text style={styles.address}>{item.addressId?.street}</Text>
-      </View>
+        <View style={styles.actionRow}>
+          <Text style={styles.tapHint}>Tap to view details →</Text>
+        </View>
+      </TouchableOpacity>
+    );
 
-      <View style={styles.actionRow}>
-        <Text style={styles.tapHint}>Tap to view details →</Text>
-      </View>
-    </TouchableOpacity>
-  );
+    const completedStatuses = ['delivered', 'cancelled'];
+    if (completedStatuses.includes(item.status)) {
+      return (
+        <SwipeableOrderCard orderId={item._id} onDelete={handleDeleteOrder}>
+          {card}
+        </SwipeableOrderCard>
+      );
+    }
+
+    // Active orders are not swipeable
+    return card;
+  };
 
   return (
     <View style={styles.container}>
@@ -96,8 +136,8 @@ const CourierOrdersScreen = ({ navigation, route }) => {
       ) : (
         (() => {
           // Split into active (courier_assigned) and history (delivered/cancelled assigned to me)
-          const activeOrders = orders.filter(o => o.status === 'courier_assigned');
-          const historyOrders = orders.filter(o => ['delivered', 'cancelled'].includes(o.status));
+          const activeOrders = orders.filter(o => o.status === 'courier_assigned' && !o.hiddenForCourier);
+          const historyOrders = orders.filter(o => ['delivered', 'cancelled'].includes(o.status) && !o.hiddenForCourier);
 
           if (activeOrders.length === 0 && historyOrders.length === 0) {
             return (

@@ -11,5 +11,7 @@ router.get('/courier', auth, checkRole(['courier']), orderController.getOrdersBy
 router.patch('/:orderId/assign', auth, checkRole(['courier']), orderController.assignCourier);
 router.patch('/:orderId/status', auth, checkRole(['owner', 'courier']), orderController.updateOrderStatus);
 router.patch('/:orderId/rate', auth, orderController.rateOrder);
+// Soft-hide an order for the requesting role
+router.patch('/:orderId/hide', auth, orderController.hideOrderForRole);
 
 module.exports = router;

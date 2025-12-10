@@ -1,7 +1,10 @@
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const API_URL = 'http://192.168.1.2:5000/api'; // Telefon için doğru backend URL
+// ngrok URL
+const NGROK_BASE_URL = 'https://nonmatrimonially-previous-lanette.ngrok-free.dev';
+
+const API_URL = `${NGROK_BASE_URL}/api`;
 
 const api = axios.create({
   baseURL: API_URL,

@@ -21,23 +21,23 @@ const RoleSelectionScreen = ({ navigation }) => {
           style={[styles.roleButton, styles.userButton]}
           onPress={() => navigation.navigate('Login', { role: 'user' })}
         >
-          <Text style={styles.roleTitle}>👤 Müşteri</Text>
-          <Text style={styles.roleDescription}>Çamaşır yıkatmak istiyorum</Text>
+          <Text style={styles.roleTitle}>Müşteri</Text>
+          <Text style={styles.roleDescription}>Çamaşırlarımı yıkatmak istiyorum</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
           style={[styles.roleButton, styles.ownerButton]}
           onPress={() => navigation.navigate('Login', { role: 'owner' })}
         >
-          <Text style={styles.roleTitle}>🏢 İşletme Sahibi</Text>
-          <Text style={styles.roleDescription}>Çamaşırhaneyi yönetmek istiyorum</Text>
+          <Text style={styles.roleTitle}>İşletme Sahibi</Text>
+          <Text style={styles.roleDescription}>Çamaşırhanemi yönetmek istiyorum</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
           style={[styles.roleButton, styles.courierButton]}
           onPress={() => navigation.navigate('Login', { role: 'courier' })}
         >
-          <Text style={styles.roleTitle}>🚗 Kurye</Text>
+          <Text style={styles.roleTitle}>Kurye</Text>
           <Text style={styles.roleDescription}>Teslimat yapmak istiyorum</Text>
         </TouchableOpacity>
       </View>

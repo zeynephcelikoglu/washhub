@@ -229,3 +229,86 @@ exports.rateOrder = async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 };
+
+// Delete an order by ID
+exports.deleteOrder = async (req, res) => {
+  try {
+    const { orderId } = req.params;
+
+    const order = await Order.findById(orderId);
+    if (!order) return res.status(404).json({ message: 'Order not found' });
+
+    // Authorization rules:
+    // - Customers ('user') can delete only their own orders
+    // - Owners ('owner') can delete any order
+    // - Couriers ('courier') can delete orders assigned to them only if status is delivered or cancelled
+    const currentUserId = req.user && req.user.id ? req.user.id : null;
+    const currentUserRole = req.user && req.user.role ? req.user.role : null;
+
+    const isOrderOwner = order.userId && order.userId.toString() === currentUserId;
+    const isCourierOfOrder = order.courierId && order.courierId.toString() === currentUserId;
+
+    if (currentUserRole === 'owner') {
+      // owners can delete any order
+    } else if (currentUserRole === 'user') {
+      if (!isOrderOwner) {
+        return res.status(403).json({ message: 'Not authorized to delete this order' });
+      }
+    } else if (currentUserRole === 'courier') {
+      const allowedStatuses = ['delivered', 'cancelled'];
+      if (!isCourierOfOrder || !allowedStatuses.includes(order.status)) {
+        return res.status(403).json({ message: 'Not authorized to delete this order' });
+      }
+    } else {
+      // other roles (or missing role) are not authorized
+      return res.status(403).json({ message: 'Not authorized to delete this order' });
+    }
+
+    await Order.findByIdAndDelete(orderId);
+
+    res.status(200).json({ success: true });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// Soft-hide an order for the authenticated user's role
+exports.hideOrderForRole = async (req, res) => {
+  try {
+    const { orderId } = req.params;
+
+    const order = await Order.findById(orderId);
+    if (!order) return res.status(404).json({ message: 'Order not found' });
+
+    const currentUserId = req.user && req.user.id ? req.user.id : null;
+    const currentUserRole = req.user && req.user.role ? req.user.role : null;
+
+    if (!currentUserRole) {
+      return res.status(403).json({ message: 'Not authorized' });
+    }
+
+    if (currentUserRole === 'user') {
+      // Only the owner (customer) can hide for user
+      if (!order.userId || order.userId.toString() !== currentUserId) {
+        return res.status(403).json({ message: 'Not authorized to hide this order for user' });
+      }
+      order.hiddenForUser = true;
+    } else if (currentUserRole === 'owner') {
+      order.hiddenForOwner = true;
+    } else if (currentUserRole === 'courier') {
+      // allow courier to hide only their assigned orders
+      if (!order.courierId || order.courierId.toString() !== currentUserId) {
+        return res.status(403).json({ message: 'Not authorized to hide this order for courier' });
+      }
+      order.hiddenForCourier = true;
+    } else {
+      return res.status(403).json({ message: 'Not authorized' });
+    }
+
+    await order.save();
+
+    res.status(200).json({ success: true, order });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};

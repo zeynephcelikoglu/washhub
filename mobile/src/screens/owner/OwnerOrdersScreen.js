@@ -6,9 +6,14 @@ import {
   TouchableOpacity,
   FlatList,
   ActivityIndicator,
+  Alert,
+  LayoutAnimation,
+  UIManager,
+  Platform,
 } from 'react-native';
 import { AuthContext } from '../../context/AuthContext';
 import { orderApi } from '../../api/orderApi';
+import SwipeableOrderCard from '../../components/SwipeableOrderCard';
 
 const OwnerOrdersScreen = ({ navigation, route }) => {
   const { user } = useContext(AuthContext);
@@ -41,15 +46,86 @@ const OwnerOrdersScreen = ({ navigation, route }) => {
     return unsubscribe;
   }, [navigation]);
 
+  // Enable LayoutAnimation for Android
+  useEffect(() => {
+    if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+      UIManager.setLayoutAnimationEnabledExperimental(true);
+    }
+  }, []);
+
   const fetchOrders = async () => {
     setLoading(true);
     try {
       const response = await orderApi.getOrdersByOwner();
-      setOrders(response.data.orders || []);
+      const all = response.data.orders || [];
+      setOrders(all);
     } catch (error) {
       console.log('Siparişler yüklenemedi:', error);
     }
     setLoading(false);
+  };
+
+  const handleDeleteOrder = async (orderId) => {
+    try {
+      await orderApi.hideOrder(orderId);
+
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      setOrders((prev) => prev.filter((o) => o._id !== orderId));
+
+      Alert.alert('Başarılı', 'Sipariş silindi');
+    } catch (error) {
+      console.log('Silinirken hata oluştu', error);
+      Alert.alert('Hata', 'Silinirken hata oluştu');
+    }
+  };
+
+  const OrderCardContent = ({ item }) => (
+    <View>
+      <View style={styles.orderHeader}>
+        <View>
+          <Text style={styles.orderId}>Sipariş #{item._id?.slice(-6)}</Text>
+          <Text style={styles.customerName}>{item.userId?.name}</Text>
+        </View>
+        <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status) }]}> 
+          <Text style={styles.statusText}>{getStatusText(item.status)}</Text>
+        </View>
+      </View>
+
+      <View style={styles.orderDetails}>
+        <Text style={styles.itemCount}>{item.items?.length || 0} öğe • {item.totalPrice} ₺</Text>
+        <Text style={styles.date}>
+          {new Date(item.pickupDate).toLocaleDateString('tr-TR')} - {item.pickupTime}
+        </Text>
+        <Text style={styles.address}>{item.addressId?.title}</Text>
+      </View>
+
+      <View style={styles.actionRow}>
+        <Text style={styles.tapHint}>Tap to view details →</Text>
+      </View>
+    </View>
+  );
+
+  const renderHistoryItem = ({ item }) => {
+    // Only allow swipe-to-delete for completed orders
+    const deletableStatuses = ['delivered', 'cancelled'];
+    const card = (
+      <TouchableOpacity
+        style={styles.orderCard}
+        onPress={() => navigation.navigate('ApproveOrder', { order: item })}
+      >
+        <OrderCardContent item={item} />
+      </TouchableOpacity>
+    );
+
+    if (deletableStatuses.includes(item.status)) {
+      return (
+        <SwipeableOrderCard orderId={item._id} onDelete={handleDeleteOrder}>
+          {card}
+        </SwipeableOrderCard>
+      );
+    }
+
+    return card;
   };
 
   const getStatusText = (status) => {
@@ -84,7 +160,7 @@ const OwnerOrdersScreen = ({ navigation, route }) => {
           <Text style={styles.orderId}>Sipariş #{item._id?.slice(-6)}</Text>
           <Text style={styles.customerName}>{item.userId?.name}</Text>
         </View>
-        <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status) }]}>
+        <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status) }]}> 
           <Text style={styles.statusText}>{getStatusText(item.status)}</Text>
         </View>
       </View>
@@ -107,8 +183,8 @@ const OwnerOrdersScreen = ({ navigation, route }) => {
   const activeStatuses = ['pending_owner', 'courier_assigned'];
   const historyStatuses = ['delivered', 'cancelled'];
 
-  const activeOrders = orders.filter(o => activeStatuses.includes(o.status));
-  const historyOrders = orders.filter(o => historyStatuses.includes(o.status));
+  const activeOrders = orders.filter(o => activeStatuses.includes(o.status) && !o.hiddenForOwner);
+  const historyOrders = orders.filter(o => historyStatuses.includes(o.status) && !o.hiddenForOwner);
 
   return (
     <View style={styles.container}>
@@ -145,7 +221,7 @@ const OwnerOrdersScreen = ({ navigation, route }) => {
             <FlatList
               data={historyOrders}
               keyExtractor={(item) => item._id}
-              renderItem={renderOrderItem}
+              renderItem={renderHistoryItem}
               contentContainerStyle={styles.listContent}
               onRefresh={fetchOrders}
               refreshing={loading}
