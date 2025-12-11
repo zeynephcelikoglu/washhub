@@ -11,86 +11,19 @@ import {
 } from 'react-native';
 import { AuthContext } from '../../context/AuthContext';
 
-const categories = [
-  { id: 'wash', title: 'Çamaşır Yıkama', icon: '🧺', color: '#E8F4FF' },
-  { id: 'iron', title: 'Ütü', icon: '🧼', color: '#FFF7EA' },
-  { id: 'dry', title: 'Kurutma', icon: '🌀', color: '#F2F7F2' },
-  { id: 'dryclean', title: 'Kuru Temizleme', icon: '🧥', color: '#FFF1F0' },
-];
-
 const UserHomeScreen = ({ navigation }) => {
-  const { user, signOut } = useContext(AuthContext);
-
-  const renderCategory = ({ item }) => (
-    <TouchableOpacity
-      style={[styles.categoryCard, { backgroundColor: item.color }]}
-      onPress={() => navigation.navigate('CreateOrder', { category: item.id })}
-    >
-      <Text style={styles.categoryIcon}>{item.icon}</Text>
-      <Text style={styles.categoryTitle}>{item.title}</Text>
-    </TouchableOpacity>
-  );
+  const { user } = useContext(AuthContext);
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 24 }}>
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.greeting}>Merhaba,</Text>
-          <Text style={styles.userName}>{user?.name || 'Müşteri'}</Text>
-        </View>
-        <TouchableOpacity
-          style={styles.createOrderButton}
-          onPress={() => navigation.navigate('CreateOrder')}
-        >
-          <Text style={styles.createOrderText}>Sipariş Oluştur</Text>
-        </TouchableOpacity>
-      </View>
-
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Hizmetler</Text>
-        <FlatList
-          data={categories}
-          keyExtractor={(i) => i.id}
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ paddingHorizontal: 16 }}
-          renderItem={renderCategory}
-        />
-      </View>
-
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Kısa Yollar</Text>
-        <View style={styles.shortcutsRow}>
-          <TouchableOpacity
-            style={styles.shortcutCard}
-            onPress={() => navigation.navigate('OrdersTab')}
-          >
-            <Text style={styles.shortcutIcon}>📦</Text>
-            <Text style={styles.shortcutText}>Siparişlerim</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.shortcutCard}
-            onPress={() => navigation.navigate('AddressesTab')}
-          >
-            <Text style={styles.shortcutIcon}>📍</Text>
-            <Text style={styles.shortcutText}>Adresler</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.shortcutCard}
-            onPress={() => navigation.navigate('ProfileTab')}
-          >
-            <Text style={styles.shortcutIcon}>👤</Text>
-            <Text style={styles.shortcutText}>Profil</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      <View style={styles.footerNote}>
-        <Text style={styles.footerText}>İhtiyacınıza göre kategori seçip hızlıca sipariş oluşturabilirsiniz.</Text>
-      </View>
-    </ScrollView>
+    <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+      <Text style={{ fontSize: 22, fontWeight: '800', color: '#0F172A', marginBottom: 12 }}>Hoş geldiniz</Text>
+      <TouchableOpacity
+        style={{ backgroundColor: '#007AFF', paddingVertical: 18, paddingHorizontal: 36, borderRadius: 14 }}
+        onPress={() => navigation.navigate('ServiceProductSelection')}
+      >
+        <Text style={{ color: '#fff', fontWeight: '800', fontSize: 16 }}>Sipariş Ver</Text>
+      </TouchableOpacity>
+    </View>
   );
 };
 

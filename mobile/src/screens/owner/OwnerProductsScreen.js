@@ -16,7 +16,7 @@ const OwnerProductsScreen = () => {
   const { user, signOut } = useContext(AuthContext);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
-  const [serviceType, setServiceType] = useState('standard');
+  const [serviceType, setServiceType] = useState('washing');
   const [basePrice, setBasePrice] = useState('');
   const [pricePerKg, setPricePerKg] = useState('');
   const [loading, setLoading] = useState(false);
@@ -62,7 +62,7 @@ const OwnerProductsScreen = () => {
       setDescription('');
       setBasePrice('');
       setPricePerKg('');
-      setServiceType('standard');
+      setServiceType('washing');
       await fetchProducts();
     } catch (error) {
       Alert.alert('Hata', error.message || 'Hizmet eklenemedi');
@@ -88,6 +88,35 @@ const OwnerProductsScreen = () => {
         }
       }
     ], 'plain-text', `${prod.price || prod.basePrice || ''}`);
+  };
+
+  const handleUpdateServiceType = (prod) => {
+    const serviceOptions = [
+      { key: 'washing', label: 'Yıkama' },
+      { key: 'ironing', label: 'Ütü' },
+      { key: 'drying', label: 'Kurutma' },
+      { key: 'dry_cleaning', label: 'Kuru Temizleme' },
+    ];
+    
+    Alert.alert(
+      'Hizmet Türünü Değiştir',
+      'Yeni hizmet türünü seçin:',
+      [
+        ...serviceOptions.map(opt => ({
+          text: opt.label,
+          onPress: async () => {
+            try {
+              await productApi.updateProduct(prod._id, { serviceType: opt.key });
+              Alert.alert('Başarılı', 'Hizmet türü güncellendi');
+              fetchProducts();
+            } catch (err) {
+              Alert.alert('Hata', 'Güncelleme başarısız');
+            }
+          }
+        })),
+        { text: 'İptal', style: 'cancel' }
+      ]
+    );
   };
 
   const handleToggleActive = async (prod) => {
@@ -124,7 +153,7 @@ const OwnerProductsScreen = () => {
         <Text style={styles.sectionTitle}>Yeni Hizmet Ekle</Text>
 
         <View style={styles.formGroup}>
-          <Text style={styles.label}>Hizmet Adı *</Text>
+          <Text style={styles.label}>Ürün Adı</Text>
           <TextInput
             style={styles.input}
             placeholder="örn: Standart Yıkama"
@@ -147,32 +176,37 @@ const OwnerProductsScreen = () => {
           />
         </View>
 
-        <View style={styles.formGroup}>
-          <Text style={styles.label}>Hizmet Türü *</Text>
-          <View style={styles.typeButtons}>
-            {['standard', 'express', 'dry_clean'].map((type) => (
-              <TouchableOpacity
-                key={type}
-                style={[
-                  styles.typeButton,
-                  serviceType === type && styles.typeButtonActive
-                ]}
-                onPress={() => setServiceType(type)}
-              >
-                <Text style={[
-                  styles.typeButtonText,
-                  serviceType === type && styles.typeButtonTextActive
-                ]}>
-                  {type === 'standard' ? 'Standart' : type === 'express' ? 'Hızlı' : 'Kuru Temizlik'}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+      <View style={styles.formGroup}>
+        <Text style={styles.label}>Hizmet Türü</Text>
+        <View style={styles.typeButtons}>
+          {[
+            { key: 'washing', label: 'Yıkama' },
+            { key: 'ironing', label: 'Ütü' },
+            { key: 'drying', label: 'Kurutma' },
+            { key: 'dry_cleaning', label: 'Kuru Temizleme' },
+          ].map((type) => (
+            <TouchableOpacity
+              key={type.key}
+              style={[
+                styles.typeButton,
+                serviceType === type.key && styles.typeButtonActive
+              ]}
+              onPress={() => setServiceType(type.key)}
+            >
+              <Text style={[
+                styles.typeButtonText,
+                serviceType === type.key && styles.typeButtonTextActive
+              ]}>
+                {type.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
         </View>
+      </View>
 
         <View style={styles.priceRow}>
           <View style={styles.formGroup}>
-            <Text style={styles.label}>Taban Fiyat (₺) *</Text>
+            <Text style={styles.label}>Taban Fiyat (₺)</Text>
             <TextInput
               style={styles.input}
               placeholder="10"
@@ -184,7 +218,7 @@ const OwnerProductsScreen = () => {
           </View>
 
           <View style={styles.formGroup}>
-            <Text style={styles.label}>Kg Fiyatı (₺) *</Text>
+            <Text style={styles.label}>Kg Fiyatı (₺) </Text>
             <TextInput
               style={styles.input}
               placeholder="5"
@@ -208,26 +242,6 @@ const OwnerProductsScreen = () => {
           )}
         </TouchableOpacity>
       </View>
-
-      <View style={styles.infoSection}>
-        <Text style={styles.infoTitle}>İşletme Bilgileri</Text>
-        <View style={styles.infoRow}>
-          <Text style={styles.infoLabel}>İsim:</Text>
-          <Text style={styles.infoValue}>{user?.name}</Text>
-        </View>
-        <View style={styles.infoRow}>
-          <Text style={styles.infoLabel}>Email:</Text>
-          <Text style={styles.infoValue}>{user?.email}</Text>
-        </View>
-        <View style={styles.infoRow}>
-          <Text style={styles.infoLabel}>Rating:</Text>
-          <Text style={styles.infoValue}>⭐ {user?.rating || 5.0}</Text>
-        </View>
-
-        <TouchableOpacity style={styles.logoutButton} onPress={signOut}>
-          <Text style={styles.logoutButtonText}>Çıkış Yap</Text>
-        </TouchableOpacity>
-      </View>
       
       <View style={[styles.section, { marginTop: 8 }]}> 
         <Text style={styles.sectionTitle}>Mevcut Hizmetler</Text>
@@ -236,28 +250,46 @@ const OwnerProductsScreen = () => {
         ) : products.length === 0 ? (
           <Text style={{ color: '#666' }}>Henüz hizmet yok</Text>
         ) : (
-          products.map((p) => (
-            <View key={p._id} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' }}>
-              <View>
-                <Text style={{ fontWeight: '800' }}>{p.name}</Text>
-                <Text style={{ color: '#64748B' }}>{p.category || 'Genel'}</Text>
+          (() => {
+            const serviceLabels = { washing: 'Yıkama', ironing: 'Ütü', drying: 'Kurutma', dry_cleaning: 'Kuru Temizleme' };
+            const grouped = {};
+            products.forEach(p => {
+              const service = p.serviceType || 'washing';
+              if (!grouped[service]) grouped[service] = [];
+              grouped[service].push(p);
+            });
+            
+            return Object.entries(grouped).map(([service, items]) => (
+              <View key={service}>
+                <Text style={{ fontWeight: '800', color: '#0F172A', marginTop: 12, marginBottom: 8 }}>📋 {serviceLabels[service] || service}</Text>
+                {items.map((p) => (
+                  <View key={p._id} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' }}>
+                    <View>
+                      <Text style={{ fontWeight: '800' }}>{p.name}</Text>
+                      <Text style={{ color: '#64748B' }}>{p.category || 'Genel'}</Text>
+                    </View>
+                    <View style={{ alignItems: 'flex-end' }}>
+                      <Text style={{ color: '#1E6CF3', fontWeight: '800' }}>{p.price || p.basePrice || 0} ₺</Text>
+                      <View style={{ flexDirection: 'row', marginTop: 8 }}>
+                        <TouchableOpacity style={{ marginRight: 8 }} onPress={() => handleUpdatePrice(p)}>
+                          <Text style={{ color: '#1E6CF3', fontWeight: '700' }}>Fiyat</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={{ marginRight: 8 }} onPress={() => handleUpdateServiceType(p)}>
+                          <Text style={{ color: '#F59E0B', fontWeight: '700' }}>Tür</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={{ marginRight: 8 }} onPress={() => handleToggleActive(p)}>
+                          <Text style={{ color: p.isActive ? '#10B981' : '#9CA3AF', fontWeight: '700' }}>{p.isActive ? 'Aktif' : 'Pasif'}</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity onPress={() => handleDelete(p)}>
+                          <Text style={{ color: '#EF4444', fontWeight: '700' }}>Sil</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  </View>
+                ))}
               </View>
-              <View style={{ alignItems: 'flex-end' }}>
-                <Text style={{ color: '#1E6CF3', fontWeight: '800' }}>{p.price || p.basePrice || 0} ₺</Text>
-                <View style={{ flexDirection: 'row', marginTop: 8 }}>
-                  <TouchableOpacity style={{ marginRight: 8 }} onPress={() => handleUpdatePrice(p)}>
-                    <Text style={{ color: '#1E6CF3', fontWeight: '700' }}>Fiyat</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={{ marginRight: 8 }} onPress={() => handleToggleActive(p)}>
-                    <Text style={{ color: p.isActive ? '#10B981' : '#9CA3AF', fontWeight: '700' }}>{p.isActive ? 'Aktif' : 'Pasif'}</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity onPress={() => handleDelete(p)}>
-                    <Text style={{ color: '#EF4444', fontWeight: '700' }}>Sil</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            </View>
-          ))
+            ));
+          })()
         )}
       </View>
     </ScrollView>

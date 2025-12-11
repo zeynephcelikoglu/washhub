@@ -2,13 +2,34 @@ const Product = require('../models/Product');
 
 exports.getAllProducts = async (req, res) => {
   try {
-    // Only return active products for general users
-    const products = await Product.find({ isActive: true });
+    // Support optional serviceType filtering
+    const { serviceType } = req.query;
+    const filter = { isActive: true };
+    if (serviceType) {
+      filter.serviceType = serviceType;
+    }
+    const products = await Product.find(filter);
 
     res.status(200).json({
       success: true,
       products
     });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// Get products by service type
+exports.getProductsByService = async (req, res) => {
+  try {
+    const { serviceType } = req.params;
+    // Validate serviceType
+    const validTypes = ['washing', 'ironing', 'drying', 'dry_cleaning'];
+    if (!validTypes.includes(serviceType)) {
+      return res.status(400).json({ message: `Invalid serviceType. Valid types: ${validTypes.join(', ')}` });
+    }
+    const products = await Product.find({ serviceType, isActive: true });
+    res.status(200).json({ success: true, products });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -26,11 +47,11 @@ exports.getAllProductsAdmin = async (req, res) => {
 
 exports.createProduct = async (req, res) => {
   try {
-    // Allow flexible payload but ensure required values exist or default
+    // serviceType is now required
     const {
       name,
       description = '',
-      serviceType = 'standard',
+      serviceType,
       price = 0,
       basePrice = 0,
       pricePerKg = 0,
@@ -42,6 +63,10 @@ exports.createProduct = async (req, res) => {
 
     if (!name) {
       return res.status(400).json({ message: 'Missing required field: name' });
+    }
+
+    if (!serviceType) {
+      return res.status(400).json({ message: 'Missing required field: serviceType' });
     }
 
     const product = new Product({
@@ -73,10 +98,15 @@ exports.updateProduct = async (req, res) => {
     const product = await Product.findById(id);
     if (!product) return res.status(404).json({ message: 'Product not found' });
 
-    // Apply updates (allow partial)
+    // Apply updates (allow partial, but validate serviceType if provided)
     Object.keys(updates).forEach((k) => {
       product[k] = updates[k];
     });
+
+    // Ensure serviceType is set
+    if (!product.serviceType) {
+      return res.status(400).json({ message: 'serviceType is required' });
+    }
 
     await product.save();
     res.status(200).json({ success: true, product });
@@ -91,7 +121,7 @@ exports.deleteProduct = async (req, res) => {
     const product = await Product.findById(id);
     if (!product) return res.status(404).json({ message: 'Product not found' });
 
-    await product.remove();
+    await Product.findByIdAndDelete(id);
     res.status(200).json({ success: true, message: 'Product deleted' });
   } catch (error) {
     res.status(500).json({ message: error.message });

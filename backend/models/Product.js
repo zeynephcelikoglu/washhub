@@ -15,8 +15,8 @@ const productSchema = new mongoose.Schema({
   },
   serviceType: {
     type: String,
-    enum: ['standard', 'express', 'dry_clean'],
-    default: 'standard'
+    enum: ['washing', 'ironing', 'drying', 'dry_cleaning'],
+    required: true
   },
   // Backwards compatible fields
   basePrice: {

@@ -10,6 +10,9 @@ import UserAddressesScreen from '../screens/user/UserAddressesScreen';
 import UserProfileScreen from '../screens/user/UserProfileScreen';
 import CreateOrderScreen from '../screens/user/CreateOrderScreen';
 import OrderReviewScreen from '../screens/user/OrderReviewScreen';
+import ServiceProductSelectionScreen from '../screens/user/ServiceProductSelectionScreen';
+import OrderAddressAndTimeScreen from '../screens/user/OrderAddressAndTimeScreen';
+import OrderSummaryScreen from '../screens/user/OrderSummaryScreen';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -31,10 +34,24 @@ function UserHomeStack() {
       />
 
       <Stack.Screen
-        name="CreateOrder"
-        component={CreateOrderScreen}
-        options={{ title: 'Sipariş Oluştur' }}
+        name="ServiceProductSelection"
+        component={ServiceProductSelectionScreen}
+        options={{ title: 'Hizmet ve Ürün Seçimi' }}
       />
+
+      <Stack.Screen
+        name="OrderAddressAndTime"
+        component={OrderAddressAndTimeScreen}
+        options={{ title: 'Adres ve Zaman' }}
+      />
+
+      <Stack.Screen
+        name="OrderSummary"
+        component={OrderSummaryScreen}
+        options={{ title: 'Sipariş Özeti' }}
+      />
+
+      {/* SelectClothingScreen removed - product/service selection now handled inside CreateOrder */}
 
       <Stack.Screen
         name="OrderReview"

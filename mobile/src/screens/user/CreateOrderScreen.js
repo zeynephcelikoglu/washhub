@@ -15,6 +15,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { AuthContext } from '../../context/AuthContext';
 import { addressApi } from '../../api/addressApi';
 import { productApi } from '../../api/productApi';
+import ClothingCard from '../../components/ClothingCard';
 
 const CreateOrderScreen = ({ navigation, route }) => {
   const { user } = useContext(AuthContext);
@@ -36,9 +37,17 @@ const CreateOrderScreen = ({ navigation, route }) => {
   const [showPickupTime, setShowPickupTime] = useState(false);
   const [showDeliveryDate, setShowDeliveryDate] = useState(false);
   const [showDeliveryTime, setShowDeliveryTime] = useState(false);
+  // Controls which picker is open inline: 'pickupDate' | 'pickupTime' | 'deliveryDate' | 'deliveryTime' | null
+  const [openPicker, setOpenPicker] = useState(null);
+
+  // Validation error state
+  const [validationError, setValidationError] = useState(null);
 
   const [notes, setNotes] = useState('');
   const [productsLoading, setProductsLoading] = useState(true);
+  // New: service and clothing selection inside the order flow
+  const [selectedService, setSelectedService] = useState(null); // 'washing'|'ironing'|'drying'|'dry_cleaning'
+  const [selectedItems, setSelectedItems] = useState({}); // { itemId: qty }
 
   useEffect(() => {
     if (user?.id) {
@@ -46,6 +55,11 @@ const CreateOrderScreen = ({ navigation, route }) => {
       fetchProducts();
     }
   }, [user?.id]);
+
+  // Live validation on date/time changes
+  useEffect(() => {
+    validateTimes();
+  }, [pickupDate, pickupTime, deliveryDate, deliveryTime]);
 
   const fetchAddresses = async () => {
     try {
@@ -84,35 +98,139 @@ const CreateOrderScreen = ({ navigation, route }) => {
     return products.reduce((sum, p) => sum + ((p.price || p.basePrice || 0) * (quantities[p._id] || 0)), 0);
   };
 
+  // Compute total for selectedItems if needed (placeholder: no prices for clothing types)
+  const computeSelectedTotal = () => {
+    return 0; // clothing selection currently doesn't have pricing - backend may calculate later
+  };
+
+  /**
+   * LIVE VALIDATION - Runs immediately on date/time changes
+   * Validates according to business rules:
+   * 1. Working hours limit (08:00–19:00) for both pickup and delivery
+   * 2. Earliest pickup must be at least 1 hour from current time
+   * 3. Delivery time must be at least 3 hours after pickup (same day allowed)
+   * 4. Cannot select past date or time
+   * 
+   * Returns: true if all valid, false otherwise
+   * Sets error message in state for UI display
+   */
+  const validateTimes = () => {
+    try {
+      // Create proper Date objects from date and time states
+      const pickupDateTime = new Date(pickupDate);
+      pickupDateTime.setHours(pickupTime.getHours(), pickupTime.getMinutes(), 0, 0);
+
+      const deliveryDateTime = new Date(deliveryDate);
+      deliveryDateTime.setHours(deliveryTime.getHours(), deliveryTime.getMinutes(), 0, 0);
+
+      const now = new Date();
+      const pickupHour = pickupTime.getHours();
+      const pickupMinute = pickupTime.getMinutes();
+      const deliveryHour = deliveryTime.getHours();
+      const deliveryMinute = deliveryTime.getMinutes();
+
+      // Rule 4: Cannot select past date or time
+      if (pickupDateTime < now) {
+        setValidationError('Geçmiş bir tarih veya saat seçemezsiniz.');
+        return false;
+      }
+
+      // Rule 1: Check pickup working hours (08:00–19:00)
+      if (pickupHour < 8 || pickupHour >= 19) {
+        setValidationError('Alış saati 08:00–19:00 arasında olmalıdır.');
+        return false;
+      }
+
+      // Rule 2: Earliest pickup must be at least 1 hour from current time
+      const oneHourLater = new Date(now.getTime() + 60 * 60 * 1000);
+      if (pickupDateTime < oneHourLater) {
+        setValidationError('En erken bir saat sonrasına randevu oluşturabilirsiniz.');
+        return false;
+      }
+
+      // Rule 3: Delivery time must be at least 3 hours after pickup (SAME DAY ALLOWED)
+      const threeHoursAfterPickup = new Date(pickupDateTime.getTime() + 3 * 60 * 60 * 1000);
+      if (deliveryDateTime < threeHoursAfterPickup) {
+        setValidationError('Teslimat saati, alış saatinden en az üç saat sonra olmalıdır.');
+        return false;
+      }
+
+      // Rule 1: Check delivery working hours (08:00–19:00)
+      if (deliveryHour < 8 || deliveryHour > 19 || (deliveryHour === 19 && deliveryMinute > 0)) {
+        setValidationError('Teslimat saati 08:00–19:00 arasında olmalıdır.');
+        return false;
+      }
+
+      // All validations passed
+      setValidationError(null);
+      return true;
+    } catch (error) {
+      console.log('Validation error:', error);
+      setValidationError('Tarih ve saat doğrulaması yapılamadı.');
+      return false;
+    }
+  };
+
   const handlePickupDateChange = (event, selectedDate) => {
-    if (Platform.OS !== 'ios') setShowPickupDate(false);
     if (selectedDate) setPickupDate(selectedDate);
+    // Auto-close inline picker after selection
+    setOpenPicker(null);
   };
 
   const handlePickupTimeChange = (event, selectedTime) => {
-    if (Platform.OS !== 'ios') setShowPickupTime(false);
     if (selectedTime) setPickupTime(selectedTime);
+    setOpenPicker(null);
   };
 
   const handleDeliveryDateChange = (event, selectedDate) => {
-    if (Platform.OS !== 'ios') setShowDeliveryDate(false);
     if (selectedDate) setDeliveryDate(selectedDate);
+    setOpenPicker(null);
   };
 
   const handleDeliveryTimeChange = (event, selectedTime) => {
-    if (Platform.OS !== 'ios') setShowDeliveryTime(false);
     if (selectedTime) setDeliveryTime(selectedTime);
+    setOpenPicker(null);
   };
 
   const handleContinue = () => {
-    const items = products
-      .filter(p => (quantities[p._id] || 0) > 0)
-      .map(p => ({
-        productId: p._id,
-        name: p.name,
-        price: p.price || p.basePrice || 0,
-        quantity: quantities[p._id] || 0,
-      }));
+    // Check if there are validation errors
+    if (validationError) {
+      Alert.alert('Geçersiz Tarih/Saat', validationError);
+      return;
+    }
+
+    // Build items: prefer selectedItems (from service/product selector) if present,
+    // otherwise fall back to existing product selection (backend product list)
+    const selectedKeys = Object.keys(selectedItems).filter(k => (selectedItems[k] || 0) > 0);
+    let items = [];
+    if (selectedKeys.length > 0) {
+      // Use selectedItems created in the UI (no productId from backend)
+      items = selectedKeys.map((id) => {
+        // Try to find a friendly title from local mapping below
+        const info = SERVICE_CLOTHES.flatMap(s => s.items).find(it => it.id === id) || { title: id };
+        return {
+          productId: null,
+          name: info.title || id,
+          price: 0,
+          quantity: selectedItems[id] || 0,
+        };
+      });
+    } else {
+      items = products
+        .filter(p => (quantities[p._id] || 0) > 0)
+        .map(p => ({
+          productId: p._id,
+          name: p.name,
+          price: p.price || p.basePrice || 0,
+          quantity: quantities[p._id] || 0,
+        }));
+    }
+
+    // Service must be selected when using the new flow
+    if (!selectedService && selectedKeys.length > 0) {
+      Alert.alert('Hata', 'Lütfen bir hizmet seçin');
+      return;
+    }
 
     if (!selectedAddress) {
       Alert.alert('Hata', 'Lütfen teslimat adresi seçin');
@@ -124,15 +242,14 @@ const CreateOrderScreen = ({ navigation, route }) => {
       return;
     }
 
-    if (pickupDate > deliveryDate) {
-      Alert.alert('Hata', 'Teslim tarihi alış tarihinden sonra olmalı');
-      return;
-    }
-
     const totalPrice = computeTotal();
-    if (totalPrice <= 0) {
-      Alert.alert('Hata', 'Toplam fiyat 0 olamaz');
-      return;
+    // If user used the new clothing selection (selectedItems), pricing may be handled server-side;
+    // skip totalPrice zero check when using selectedItems.
+    if (Object.keys(selectedItems).filter(k => (selectedItems[k] || 0) > 0).length === 0) {
+      if (totalPrice <= 0) {
+        Alert.alert('Hata', 'Toplam fiyat 0 olamaz');
+        return;
+      }
     }
 
     // Format times and dates properly
@@ -180,9 +297,118 @@ const CreateOrderScreen = ({ navigation, route }) => {
     </View>
   );
 
+  // SERVICE & CLOTHING data for in-screen flow
+  const SERVICES = [
+    { key: 'washing', title: 'Yıkama', color: '#E8F4FF', icon: '🧺' },
+    { key: 'ironing', title: 'Ütü', color: '#FFF7EA', icon: '🧼' },
+    { key: 'drying', title: 'Kurutma', color: '#F2F7F2', icon: '🌀' },
+    { key: 'dry_cleaning', title: 'Kuru Temizleme', color: '#FFF1F0', icon: '🧥' },
+  ];
+
+  const SERVICE_CLOTHES = [
+    { service: 'washing', items: [
+      { id: 'tshirt', title: 'Tişört', desc: 'Günlük tişört', icon: '👕' },
+      { id: 'pants', title: 'Pantolon', desc: 'Kot / kumaş pantolon', icon: '👖' },
+      { id: 'sweater', title: 'Kazak', desc: 'Triko / kazak', icon: '🧶' },
+    ]},
+    { service: 'ironing', items: [
+      { id: 'shirt', title: 'Gömlek', desc: 'Günlük / iş gömleği', icon: '👔' },
+      { id: 'dress', title: 'Elbise', desc: 'Elbise / etek', icon: '👗' },
+    ]},
+    { service: 'drying', items: [
+      { id: 'towel', title: 'Havlu', desc: 'Banyo havlusu', icon: '🧻' },
+      { id: 'bedsheet', title: 'Çarşaf', desc: 'Yatak çarşafı', icon: '🛏️' },
+    ]},
+    { service: 'dry_cleaning', items: [
+      { id: 'coat', title: 'Mont / Ceket', desc: 'Dış giyim', icon: '🧥' },
+      { id: 'suit', title: 'Takım', desc: 'Takım elbise', icon: '🕴️' },
+    ]},
+  ];
+
+  const onToggleItem = (id) => {
+    setSelectedItems(s => ({ ...s, [id]: (s[id] || 0) > 0 ? 0 : 1 }));
+  };
+  const onIncItem = (id) => setSelectedItems(s => ({ ...s, [id]: (s[id] || 0) + 1 }));
+  const onDecItem = (id) => setSelectedItems(s => ({ ...s, [id]: Math.max(0, (s[id] || 0) - 1) }));
+
+  const formatServiceLabel = (s) => {
+    switch (s) {
+      case 'washing': return 'Yıkama';
+      case 'ironing': return 'Ütü';
+      case 'drying': return 'Kurutma';
+      case 'dry_cleaning': return 'Kuru Temizleme';
+      default: return s;
+    }
+  };
+
+  // Helper functions to determine which field to mark invalid
+  const isPickupFieldInvalid = (err) => {
+    if (!err) return false;
+    return /Alış|alış|En erken|Geçmiş/i.test(err);
+  };
+
+  const isDeliveryFieldInvalid = (err) => {
+    if (!err) return false;
+    return /Teslimat|teslimat|üç saat|3 saat/i.test(err);
+  };
+
+  const mapPickupError = (err) => {
+    if (!err) return null;
+    if (/En erken/i.test(err)) return 'En erken bir saat sonrası için randevu oluşturabilirsiniz.';
+    if (/Alış saati/i.test(err)) return 'Alış saati 08:00–19:00 arasında olmalıdır.';
+    if (/Geçmiş/i.test(err)) return 'Geçmiş bir tarih veya saat seçemezsiniz.';
+    return err;
+  };
+
+  const mapDeliveryError = (err) => {
+    if (!err) return null;
+    if (/üç saat|3 saat/i.test(err)) return 'Teslimat saati, alış saatinden en az üç saat sonra olmalıdır.';
+    if (/Teslimat saati/i.test(err)) return 'Teslimat saati 08:00–19:00 arasında olmalıdır.';
+    if (/Geçmiş/i.test(err)) return 'Geçmiş bir tarih veya saat seçemezsiniz.';
+    return err;
+  };
+
+  // Read incoming params for service and selected clothes (from SelectClothingScreen)
+  const serviceTypeParam = route?.params?.serviceType;
+  const selectedClothesParam = route?.params?.selectedClothes || [];
+
   return (
-    <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 100 }}>
+    <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 140 }}>
       
+      {/* SERVICE SELECTOR (in-screen) */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Hizmet Seçimi</Text>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+          {SERVICES.map(s => (
+            <TouchableOpacity key={s.key} onPress={() => setSelectedService(s.key)} style={[styles.serviceCard, selectedService === s.key && styles.serviceCardActive, { backgroundColor: s.color }]}> 
+              <Text style={{ fontSize: 22 }}>{s.icon}</Text>
+              <Text style={{ fontSize: 12, fontWeight: '800', marginTop: 6 }}>{s.title}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </View>
+
+      {/* PRODUCT / CLOTHING SELECTION (dynamic) */}
+      {selectedService && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Ürünler</Text>
+          <View>
+            { (SERVICE_CLOTHES.find(sc => sc.service === selectedService)?.items || []).map(item => (
+              <View key={item.id} style={{ marginBottom: 8 }}>
+                <ClothingCard
+                  item={item}
+                  qty={selectedItems[item.id]}
+                  onInc={() => onIncItem(item.id)}
+                  onDec={() => onDecItem(item.id)}
+                  selected={(selectedItems[item.id] || 0) > 0}
+                  onToggle={() => onToggleItem(item.id)}
+                />
+              </View>
+            ))}
+          </View>
+        </View>
+      )}
+
       {/* Adres Seçimi */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>📍 Teslimat Adresi</Text>
@@ -240,81 +466,98 @@ const CreateOrderScreen = ({ navigation, route }) => {
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>📅 Tarih & Saat</Text>
 
-        <Text style={styles.subLabel}>Alış</Text>
-        <View style={styles.dateTimeRow}>
-          <TouchableOpacity 
-            style={styles.dateTimeBtn} 
-            onPress={() => setShowPickupDate(true)}
+        {validationError && (
+          <View style={styles.errorBanner}>
+            <Text style={styles.errorBannerText}>⚠️ {validationError}</Text>
+          </View>
+        )}
+
+        {/* Pickup Card */}
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Alış Tarihi & Saati</Text>
+          <Text style={styles.cardHelper}>Çalışma saatleri: 08:00 – 19:00</Text>
+          <Text style={styles.cardHelper}>En erken 1 saat sonrası için alış yapılabilir.</Text>
+
+          <Text style={styles.fieldLabel}>Alış Tarihi</Text>
+          <TouchableOpacity
+            style={[styles.inputBtn, isPickupFieldInvalid(validationError) && styles.inputError]}
+            onPress={() => setOpenPicker(openPicker === 'pickupDate' ? null : 'pickupDate')}
           >
-            <Text style={styles.dateTimeText}>
-              {pickupDate.toLocaleDateString('tr-TR')}
-            </Text>
+            <Text style={styles.inputBtnText}>{pickupDate.toLocaleDateString('tr-TR')}</Text>
           </TouchableOpacity>
-          <TouchableOpacity 
-            style={styles.dateTimeBtn} 
-            onPress={() => setShowPickupTime(true)}
+          {isPickupFieldInvalid(validationError) && (
+            <Text style={styles.inlineError}>{mapPickupError(validationError)}</Text>
+          )}
+
+          <Text style={styles.fieldLabel}>Alış Saati</Text>
+          <TouchableOpacity
+            style={[styles.inputBtn, isPickupFieldInvalid(validationError) && styles.inputError]}
+            onPress={() => setOpenPicker(openPicker === 'pickupTime' ? null : 'pickupTime')}
           >
-            <Text style={styles.dateTimeText}>
-              {pickupTime.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}
-            </Text>
+            <Text style={styles.inputBtnText}>{pickupTime.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}</Text>
           </TouchableOpacity>
+          {openPicker === 'pickupDate' && (
+            <DateTimePicker
+              value={pickupDate}
+              mode="date"
+              display={Platform.OS === 'ios' ? 'inline' : 'default'}
+              onChange={handlePickupDateChange}
+              minimumDate={minDate}
+            />
+          )}
+          {openPicker === 'pickupTime' && (
+            <DateTimePicker
+              value={pickupTime}
+              mode="time"
+              display={Platform.OS === 'ios' ? 'inline' : 'default'}
+              onChange={handlePickupTimeChange}
+            />
+          )}
         </View>
 
-        {showPickupDate && (
-          <DateTimePicker
-            value={pickupDate}
-            mode="date"
-            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-            onChange={handlePickupDateChange}
-            minimumDate={minDate}
-          />
-        )}
-        {showPickupTime && (
-          <DateTimePicker
-            value={pickupTime}
-            mode="time"
-            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-            onChange={handlePickupTimeChange}
-          />
-        )}
+        {/* Delivery Card */}
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Teslim Tarihi & Saati</Text>
+          <Text style={styles.cardHelper}>Çalışma saatleri: 08:00 – 19:00</Text>
+          <Text style={styles.cardHelper}>Teslimat, alıştan en az 3 saat sonra olmalıdır.</Text>
 
-        <Text style={[styles.subLabel, { marginTop: 12 }]}>Teslim</Text>
-        <View style={styles.dateTimeRow}>
-          <TouchableOpacity 
-            style={styles.dateTimeBtn} 
-            onPress={() => setShowDeliveryDate(true)}
+          <Text style={styles.fieldLabel}>Teslim Tarihi</Text>
+          <TouchableOpacity
+            style={[styles.inputBtn, isDeliveryFieldInvalid(validationError) && styles.inputError]}
+            onPress={() => setOpenPicker(openPicker === 'deliveryDate' ? null : 'deliveryDate')}
           >
-            <Text style={styles.dateTimeText}>
-              {deliveryDate.toLocaleDateString('tr-TR')}
-            </Text>
+            <Text style={styles.inputBtnText}>{deliveryDate.toLocaleDateString('tr-TR')}</Text>
           </TouchableOpacity>
-          <TouchableOpacity 
-            style={styles.dateTimeBtn} 
-            onPress={() => setShowDeliveryTime(true)}
+          {isDeliveryFieldInvalid(validationError) && (
+            <Text style={styles.inlineError}>{mapDeliveryError(validationError)}</Text>
+          )}
+
+          <Text style={styles.fieldLabel}>Teslim Saati</Text>
+          <TouchableOpacity
+            style={[styles.inputBtn, isDeliveryFieldInvalid(validationError) && styles.inputError]}
+            onPress={() => setOpenPicker(openPicker === 'deliveryTime' ? null : 'deliveryTime')}
           >
-            <Text style={styles.dateTimeText}>
-              {deliveryTime.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}
-            </Text>
+            <Text style={styles.inputBtnText}>{deliveryTime.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}</Text>
           </TouchableOpacity>
+
+          {openPicker === 'deliveryDate' && (
+            <DateTimePicker
+              value={deliveryDate}
+              mode="date"
+              display={Platform.OS === 'ios' ? 'inline' : 'default'}
+              onChange={handleDeliveryDateChange}
+              minimumDate={minDate}
+            />
+          )}
+          {openPicker === 'deliveryTime' && (
+            <DateTimePicker
+              value={deliveryTime}
+              mode="time"
+              display={Platform.OS === 'ios' ? 'inline' : 'default'}
+              onChange={handleDeliveryTimeChange}
+            />
+          )}
         </View>
-
-        {showDeliveryDate && (
-          <DateTimePicker
-            value={deliveryDate}
-            mode="date"
-            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-            onChange={handleDeliveryDateChange}
-            minimumDate={minDate}
-          />
-        )}
-        {showDeliveryTime && (
-          <DateTimePicker
-            value={deliveryTime}
-            mode="time"
-            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-            onChange={handleDeliveryTimeChange}
-          />
-        )}
       </View>
 
       {/* Notlar */}
@@ -347,8 +590,9 @@ const CreateOrderScreen = ({ navigation, route }) => {
 
       {/* Buttons */}
       <TouchableOpacity 
-        style={styles.continueBtn} 
+        style={[styles.continueBtn, validationError && styles.continueBtnDisabled]} 
         onPress={handleContinue}
+        disabled={!!validationError}
       >
         <Text style={styles.continueBtnText}>Devam</Text>
       </TouchableOpacity>
@@ -391,7 +635,21 @@ const styles = StyleSheet.create({
   subLabel: { fontSize: 13, fontWeight: '700', color: '#64748B', marginBottom: 8 },
   dateTimeRow: { flexDirection: 'row', justifyContent: 'space-between' },
   dateTimeBtn: { flex: 1, marginHorizontal: 4, backgroundColor: '#F8FAFC', padding: 12, borderRadius: 10, borderWidth: 1, borderColor: '#E6E9EE', alignItems: 'center' },
+  dateTimeBtnError: { borderColor: '#EF4444', backgroundColor: '#FEE2E2' },
   dateTimeText: { fontSize: 14, fontWeight: '700', color: '#0F172A' },
+
+  /* New card/input styles */
+  card: { backgroundColor: '#FBFDFF', borderRadius: 12, padding: 12, marginBottom: 12, borderWidth: 1, borderColor: '#EEF2FF' },
+  cardTitle: { fontSize: 14, fontWeight: '800', color: '#0F172A', marginBottom: 6 },
+  cardHelper: { fontSize: 12, color: '#64748B', marginBottom: 4 },
+  fieldLabel: { fontSize: 13, color: '#475569', fontWeight: '700', marginTop: 10, marginBottom: 6 },
+  inputBtn: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#E6E9EE', paddingVertical: 12, paddingHorizontal: 14, borderRadius: 10 },
+  inputBtnText: { fontSize: 15, color: '#0F172A', fontWeight: '700' },
+  inputError: { borderColor: '#EF4444', backgroundColor: '#FFF4F4' },
+  inlineError: { color: '#DC2626', fontSize: 12, marginTop: 6 },
+
+  errorBanner: { backgroundColor: '#FEE2E2', borderLeftWidth: 4, borderLeftColor: '#EF4444', paddingHorizontal: 12, paddingVertical: 10, borderRadius: 8, marginBottom: 12 },
+  errorBannerText: { fontSize: 13, color: '#DC2626', fontWeight: '600' },
 
   notesInput: { backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#E6E9EE', borderRadius: 10, padding: 12, minHeight: 80, fontSize: 13, color: '#0F172A', textAlignVertical: 'top' },
 
@@ -403,6 +661,9 @@ const styles = StyleSheet.create({
 
   continueBtn: { backgroundColor: '#007AFF', marginHorizontal: 16, paddingVertical: 16, borderRadius: 14, alignItems: 'center', marginTop: 16 },
   continueBtnText: { color: '#fff', fontWeight: '800', fontSize: 16 },
+  continueBtnDisabled: { backgroundColor: '#9BB7FF' },
+  serviceCard: { flex: 1, marginHorizontal: 4, borderRadius: 12, padding: 10, alignItems: 'center', justifyContent: 'center' },
+  serviceCardActive: { borderWidth: 2, borderColor: '#007AFF' },
 });
 
 export default CreateOrderScreen;
