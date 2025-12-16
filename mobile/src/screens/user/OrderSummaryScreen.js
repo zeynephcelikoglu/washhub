@@ -6,7 +6,7 @@ import { AuthContext } from '../../context/AuthContext';
 
 const OrderSummaryScreen = ({ navigation, route }) => {
   const { user } = useContext(AuthContext);
-  const { selectedService, selectedProducts = [], address, pickupDate, pickupTime, deliveryDate, deliveryTime, notes } = route.params || {};
+  const { selectedService, selectedProducts = [], address, pickupDate, pickupTime, deliveryDate, deliveryTime, notes, readOnly, isRepeatOrder, originalTotalPrice } = route.params || {};
   const [loading, setLoading] = useState(false);
   const [addressObj, setAddressObj] = useState(null);
   const [fetchingAddress, setFetchingAddress] = useState(false);
@@ -54,7 +54,9 @@ const OrderSummaryScreen = ({ navigation, route }) => {
 
   const normalizedProducts = useMemo(() => normalizeSelectedProducts(selectedProducts || []), [selectedProducts]);
 
-  const total = useMemo(() => normalizedProducts.reduce((s, p) => s + (p.price || 0) * (p.quantity || 0), 0), [normalizedProducts]);
+  const calculatedTotal = useMemo(() => normalizedProducts.reduce((s, p) => s + (p.price || 0) * (p.quantity || 0), 0), [normalizedProducts]);
+
+  const total = isRepeatOrder && originalTotalPrice !== undefined ? originalTotalPrice : calculatedTotal;
 
   useEffect(() => {
     const loadAddress = async () => {
@@ -94,6 +96,7 @@ const OrderSummaryScreen = ({ navigation, route }) => {
   const deliveryDateTimeISO = buildDateTimeISO(deliveryDate, deliveryTime);
 
   const handleConfirm = async () => {
+    if (readOnly) return;
     // Build and validate payload exactly as backend expects
     const svc = (typeof selectedService === 'string') ? selectedService : (selectedService?.serviceType || selectedService?.type || selectedService?.value || selectedService?.name);
 
@@ -118,7 +121,7 @@ const OrderSummaryScreen = ({ navigation, route }) => {
       deliveryDate: deliveryDate,
       deliveryTime: deliveryTime,
       notes: notes || '',
-      totalPrice: Number(total.toFixed(2)),
+      totalPrice: isRepeatOrder && originalTotalPrice !== undefined ? Number(originalTotalPrice) : Number(total.toFixed(2)),
     };
 
     // Debug payload prior to sending
@@ -234,11 +237,13 @@ const OrderSummaryScreen = ({ navigation, route }) => {
         </View>
       </ScrollView>
 
-      <View style={styles.footer}>
-        <TouchableOpacity style={[styles.confirmBtn, loading && styles.disabledBtn]} onPress={handleConfirm} disabled={loading}>
-          {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.confirmText}>Siparişi Onayla</Text>}
-        </TouchableOpacity>
-      </View>
+      {!readOnly && (
+        <View style={styles.footer}>
+          <TouchableOpacity style={[styles.confirmBtn, loading && styles.disabledBtn]} onPress={handleConfirm} disabled={loading}>
+            {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.confirmText}>Siparişi Onayla</Text>}
+          </TouchableOpacity>
+        </View>
+      )}
     </View>
   );
 };

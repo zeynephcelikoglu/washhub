@@ -23,7 +23,7 @@ const UserProfileScreen = () => {
     <ScrollView style={styles.container}>
       <View style={styles.profileHeader}>
         <View style={styles.avatar}>
-          <Text style={styles.avatarText}>👤</Text>
+          <Text style={styles.avatarText}></Text>
         </View>
         <View>
           <Text style={styles.name}>{user?.name}</Text>
@@ -46,13 +46,13 @@ const UserProfileScreen = () => {
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Hesap Ayarları</Text>
         <TouchableOpacity style={styles.menuItem}>
-          <Text style={styles.menuText}>🔒 Şifre Değiştir</Text>
+          <Text style={styles.menuText}>Şifre Değiştir</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.menuItem}>
-          <Text style={styles.menuText}>🔔 Bildirim Ayarları</Text>
+          <Text style={styles.menuText}>Bildirim Ayarları</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.menuItem}>
-          <Text style={styles.menuText}>ℹ️ Hakkında</Text>
+          <Text style={styles.menuText}>Hakkında</Text>
         </TouchableOpacity>
       </View>
 

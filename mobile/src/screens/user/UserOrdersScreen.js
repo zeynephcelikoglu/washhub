@@ -15,12 +15,14 @@ import { Ionicons } from '@expo/vector-icons';
 import { AuthContext } from '../../context/AuthContext';
 import { orderApi } from '../../api/orderApi';
 import SwipeableOrderCard from '../../components/SwipeableOrderCard';
+import { useNavigation } from '@react-navigation/native';
 
 const WORK_START = 8;
 const WORK_END = 19;
 
 const UserOrdersScreen = () => {
   const { user } = useContext(AuthContext);
+  const navigation = useNavigation();
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(false);
   const [repeatLoadingId, setRepeatLoadingId] = useState(null);
@@ -70,49 +72,45 @@ const UserOrdersScreen = () => {
     return d;
   };
 
-  const handleRepeatOrder = (order) => {
-    Alert.alert(
-      'Siparişi Tekrarla',
-      'Bu siparişi tekrar oluşturmak istiyor musunuz?',
-      [
-        { text: 'İptal', style: 'cancel' },
-        {
-          text: 'Evet',
-          onPress: async () => {
-            try {
-              setRepeatLoadingId(order._id);
+  const handleRepeatOrder = async (order) => {
+    // New behavior: do NOT alert and do NOT create immediately.
+    // Instead, rebuild selectedProducts and navigate to OrderAddressAndTime
+    try {
+      setRepeatLoadingId(order._id);
 
-              let pickup = normalizeTime(new Date(Date.now() + 60 * 60 * 1000));
-              let delivery = normalizeTime(new Date(pickup.getTime() + 3 * 60 * 60 * 1000));
+      // Build selectedProducts in shapes accepted by OrderAddressAndTime / OrderSummary
+      const selectedProducts = (order.items || []).map(i => {
+        // if i.product is an object, keep it; if it's an id string, provide productId
+        if (i && i.product && typeof i.product === 'object') {
+          return { product: i.product, quantity: i.quantity };
+        }
+        return { productId: i.product || i.productId || i._id, name: i.name || i.title || '', price: i.price || i.basePrice || 0, quantity: i.quantity };
+      });
 
-              const payload = {
-                serviceType: order.serviceType,
-                items: order.items.map(i => ({
-                  product: i.product,
-                  quantity: i.quantity,
-                })),
-                addressId: order.address?._id || order.addressId,
-                pickupDate: pickup,
-                pickupTime: pickup.toTimeString().slice(0, 5),
-                deliveryDate: delivery,
-                deliveryTime: delivery.toTimeString().slice(0, 5),
-                totalPrice: order.totalPrice,
-              };
-
-              await orderApi.createOrder(payload);
-
-              Alert.alert('Başarılı', 'Sipariş tekrar oluşturuldu');
-              fetchOrders();
-            } catch (err) {
-              Alert.alert('Hata', 'Sipariş tekrar oluşturulamadı');
-            } finally {
-              setRepeatLoadingId(null);
-            }
-          },
-        },
-      ]
-    );
+      // navigate into the HomeTab stack to reuse the normal create-order flow
+      try {
+        navigation.navigate('HomeTab', { screen: 'OrderAddressAndTime', params: { selectedService: order.serviceType, selectedProducts, originalTotalPrice: order.totalPrice, isRepeatOrder: true } });
+      } catch (navErr) {
+        console.log('Navigation error', navErr);
+        Alert.alert('Hata', 'Tekrar sipariş işlemi başlatılamadı');
+      } finally {
+        // clear loading marker after brief delay so UI updates
+        setTimeout(() => setRepeatLoadingId(null), 700);
+      }
+    } catch (err) {
+      console.log('Repeat navigation error', err);
+      setRepeatLoadingId(null);
+      Alert.alert('Hata', 'Tekrar sipariş işlemi sırasında bir hata oluştu');
+    }
   };
+
+  // Refresh orders when returning to this screen (e.g., after creating a repeated order)
+  useEffect(() => {
+    const unsub = navigation.addListener && navigation.addListener('focus', () => {
+      fetchOrders();
+    });
+    return unsub;
+  }, [navigation]);
 
   const getStatusText = (status) => {
     const map = {
@@ -179,12 +177,59 @@ const UserOrdersScreen = () => {
       </View>
     );
 
+    const handlePressCard = async () => {
+      try {
+        // Build selectedProducts in the shape OrderSummary expects
+        const selectedProducts = (item.items || []).map(i => {
+          if (i && i.product && typeof i.product === 'object') {
+            return { product: i.product, quantity: i.quantity };
+          }
+          // fallback shape
+          return { productId: i.product || i.productId || i._id, name: i.name || '', price: i.price || 0, quantity: i.quantity };
+        });
+
+        const pickupDate = item.pickupDate ? new Date(item.pickupDate).toISOString().split('T')[0] : undefined;
+        const pickupTime = item.pickupTime || '';
+        const deliveryDate = item.deliveryDate ? new Date(item.deliveryDate).toISOString().split('T')[0] : undefined;
+        const deliveryTime = item.deliveryTime || '';
+
+        // Navigate into HomeTab's stack where OrderSummary is registered
+        navigation.navigate('HomeTab', {
+          screen: 'OrderSummary',
+          params: {
+            // Populate the params OrderSummary normally expects so it shows this order
+            selectedService: item.serviceType,
+            selectedProducts,
+            address: item.address || item.addressId,
+            pickupDate,
+            pickupTime,
+            deliveryDate,
+            deliveryTime,
+            notes: item.notes || '',
+            // inform summary this is read-only view
+            readOnly: true,
+            // also pass full order object for reference if needed
+            order: item,
+          },
+        });
+      } catch (err) {
+        console.log('Navigate to OrderSummary error', err);
+        Alert.alert('Hata', 'Sipariş detayları açılamadı');
+      }
+    };
+
+    const wrapped = (
+      <TouchableOpacity activeOpacity={0.85} onPress={handlePressCard}>
+        {card}
+      </TouchableOpacity>
+    );
+
     return isCompleted ? (
       <SwipeableOrderCard orderId={item._id} onDelete={handleDeleteOrder}>
-        {card}
+        {wrapped}
       </SwipeableOrderCard>
     ) : (
-      card
+      wrapped
     );
   };
 

@@ -23,7 +23,7 @@ const CourierProfileScreen = () => {
     <ScrollView style={styles.container}>
       <View style={styles.profileHeader}>
         <View style={styles.avatar}>
-          <Text style={styles.avatarText}>🚗</Text>
+          <Text style={styles.avatarText}></Text>
         </View>
         <View>
           <Text style={styles.name}>{user?.name}</Text>
@@ -58,7 +58,7 @@ const CourierProfileScreen = () => {
             <Text style={styles.statLabel}>Bu Ay</Text>
           </View>
           <View style={styles.statBox}>
-            <Text style={styles.statNumber}>⭐ {user?.rating || 5}</Text>
+            <Text style={styles.statNumber}>{user?.rating || 5}</Text>
             <Text style={styles.statLabel}>Rating</Text>
           </View>
         </View>
@@ -67,13 +67,13 @@ const CourierProfileScreen = () => {
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Ayarlar</Text>
         <TouchableOpacity style={styles.menuItem}>
-          <Text style={styles.menuText}>📍 Konumum Paylaş</Text>
+          <Text style={styles.menuText}>Konumum Paylaş</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.menuItem}>
-          <Text style={styles.menuText}>🔔 Bildirim Ayarları</Text>
+          <Text style={styles.menuText}>Bildirim Ayarları</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.menuItem}>
-          <Text style={styles.menuText}>🔒 Güvenlik</Text>
+          <Text style={styles.menuText}>Güvenlik</Text>
         </TouchableOpacity>
       </View>
 

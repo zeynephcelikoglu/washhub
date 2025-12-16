@@ -26,7 +26,7 @@ const LoginScreen = ({ navigation, route }) => {
 
     setLoading(true);
     try {
-      await signIn(email, password);
+      await signIn(email, password, role);
     } catch (error) {
       Alert.alert('Giriş Hatası', error.message || 'Giriş başarısız');
     }

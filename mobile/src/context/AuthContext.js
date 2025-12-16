@@ -66,11 +66,12 @@ export const AuthProvider = ({ children }) => {
   // LOGIN – BACKEND'E İSTEĞİ AXIOS İLE AT
   const authContext = useMemo(
     () => ({
-      signIn: async (email, password) => {
+      signIn: async (email, password, expectedRole) => {
         try {
           const response = await api.post('/auth/login', {
             email,
             password,
+            expectedRole,
           });
 
           const { token, user } = response.data;

@@ -23,7 +23,7 @@ const OwnerProfileScreen = () => {
     <ScrollView style={styles.container}>
       <View style={styles.profileHeader}>
         <View style={styles.avatar}>
-          <Text style={styles.avatarText}>🏢</Text>
+          <Text style={styles.avatarText}></Text>
         </View>
         <View>
           <Text style={styles.name}>{user?.name}</Text>
@@ -49,23 +49,23 @@ const OwnerProfileScreen = () => {
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>İşletme Ayarları</Text>
         <TouchableOpacity style={styles.menuItem}>
-          <Text style={styles.menuText}>📊 İstatistikler</Text>
+          <Text style={styles.menuText}>İstatistikler</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.menuItem}>
-          <Text style={styles.menuText}>💰 Ödeme Yönetimi</Text>
+          <Text style={styles.menuText}>Ödeme Yönetimi</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.menuItem}>
-          <Text style={styles.menuText}>🔒 Güvenlik</Text>
+          <Text style={styles.menuText}>Güvenlik</Text>
         </TouchableOpacity>
       </View>
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Destek</Text>
         <TouchableOpacity style={styles.menuItem}>
-          <Text style={styles.menuText}>📞 İletişim</Text>
+          <Text style={styles.menuText}>İletişim</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.menuItem}>
-          <Text style={styles.menuText}>❓ Yardım</Text>
+          <Text style={styles.menuText}>Yardım</Text>
         </TouchableOpacity>
       </View>
 

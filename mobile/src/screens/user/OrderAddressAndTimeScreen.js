@@ -5,7 +5,7 @@ import { addressApi } from '../../api/addressApi';
 import { AuthContext } from '../../context/AuthContext';
 
 const OrderAddressAndTimeScreen = ({ navigation, route }) => {
-  const { selectedService, selectedProducts } = route.params || {};
+  const { selectedService, selectedProducts, originalTotalPrice, isRepeatOrder } = route.params || {};
 
   const [addresses, setAddresses] = useState([]);
   const [selectedAddress, setSelectedAddress] = useState(null);
@@ -67,7 +67,7 @@ const OrderAddressAndTimeScreen = ({ navigation, route }) => {
   const handleContinue = () => {
     if (!validateTimes()) { Alert.alert('Tarih Hatası', validationError || 'Geçersiz tarih/saat'); return; }
     if (!selectedAddress) { Alert.alert('Hata', 'Lütfen teslimat adresi seçin'); return; }
-    navigation.navigate('OrderSummary', { selectedService, selectedProducts, address: selectedAddress, pickupDate: pickupDate.toISOString().split('T')[0], pickupTime: pickupTime.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }), deliveryDate: deliveryDate.toISOString().split('T')[0], deliveryTime: deliveryTime.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }), notes });
+    navigation.navigate('OrderSummary', { selectedService, selectedProducts, address: selectedAddress, pickupDate: pickupDate.toISOString().split('T')[0], pickupTime: pickupTime.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }), deliveryDate: deliveryDate.toISOString().split('T')[0], deliveryTime: deliveryTime.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }), notes, originalTotalPrice, isRepeatOrder });
   };
 
   const minDate = new Date(); minDate.setHours(0,0,0,0);
