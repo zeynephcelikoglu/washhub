@@ -9,12 +9,14 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { orderApi } from '../../api/orderApi';
+import { isCourierAssigned } from '../../utils/orderHelpers';
 
 const OwnerApproveOrderScreen = ({ route, navigation }) => {
   const { order } = route.params;
   const [loading, setLoading] = useState(false);
 
   const handleApprove = async () => {
+    if (isCourierAssigned(order)) return;
     setLoading(true);
     try {
       const res = await orderApi.updateOrderStatus(order._id, 'courier_assigned');
@@ -29,6 +31,7 @@ const OwnerApproveOrderScreen = ({ route, navigation }) => {
   };
 
   const handleCancel = () => {
+    if (isCourierAssigned(order)) return;
     Alert.alert('İptal Et', 'Bu siparişi iptal etmek istediğinize emin misiniz?', [
       { text: 'Hayır', onPress: () => {} },
       { text: 'Evet', onPress: async () => {
@@ -111,27 +114,40 @@ const OwnerApproveOrderScreen = ({ route, navigation }) => {
         </View>
       )}
 
-      <View style={styles.actionButtons}>
-        <TouchableOpacity
-          style={[styles.approveButton, loading && styles.disabledButton]}
-          onPress={handleApprove}
-          disabled={loading}
-        >
-          {loading ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.approveButtonText}>✓ Onayla</Text>
-          )}
-        </TouchableOpacity>
+      {(() => {
+        const pastStatuses = ['accepted', 'cancelled', 'completed', 'delivered', 'courier_accepted'];
+        if (isCourierAssigned(order)) {
+          return null;
+        }
 
-        <TouchableOpacity
-          style={[styles.cancelButton, loading && styles.disabledButton]}
-          onPress={handleCancel}
-          disabled={loading}
-        >
-          <Text style={styles.cancelButtonText}>✗ İptal Et</Text>
-        </TouchableOpacity>
-      </View>
+        if (pastStatuses.includes(order.status)) {
+          return null; // read-only for past orders
+        }
+
+        return (
+          <View style={styles.actionButtons}>
+            <TouchableOpacity
+              style={[styles.cancelButton, loading && styles.disabledButton]}
+              onPress={handleCancel}
+              disabled={loading}
+            >
+              <Text style={styles.cancelButtonText}>✗ İptal Et</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.approveButton, loading && styles.disabledButton]}
+              onPress={handleApprove}
+              disabled={loading}
+            >
+              {loading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.approveButtonText}>✓ Onayla</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        );
+      })()}
     </ScrollView>
   );
 };
@@ -276,6 +292,9 @@ const styles = StyleSheet.create({
     gap: 12,
     paddingHorizontal: 15,
     paddingVertical: 20,
+  },
+  actionInfoRow: {
+    backgroundColor: 'transparent',
   },
   approveButton: {
     flex: 1,

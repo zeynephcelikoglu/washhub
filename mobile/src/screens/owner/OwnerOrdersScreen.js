@@ -14,6 +14,7 @@ import {
 import { AuthContext } from '../../context/AuthContext';
 import { orderApi } from '../../api/orderApi';
 import SwipeableOrderCard from '../../components/SwipeableOrderCard';
+import { isCourierAssigned } from '../../utils/orderHelpers';
 
 const OwnerOrdersScreen = ({ navigation, route }) => {
   const { user } = useContext(AuthContext);
@@ -100,7 +101,7 @@ const OwnerOrdersScreen = ({ navigation, route }) => {
       </View>
 
       <View style={styles.actionRow}>
-        <Text style={styles.tapHint}>Tap to view details →</Text>
+        {!isCourierAssigned(item) && <Text style={styles.tapHint}>Detaylar →</Text>}
       </View>
     </View>
   );
@@ -174,7 +175,7 @@ const OwnerOrdersScreen = ({ navigation, route }) => {
       </View>
 
       <View style={styles.actionRow}>
-        <Text style={styles.tapHint}>Tap to view details →</Text>
+        <Text style={styles.tapHint}>Detaylar →</Text>
       </View>
     </TouchableOpacity>
   );
