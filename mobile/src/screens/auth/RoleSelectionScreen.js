@@ -16,7 +16,8 @@ const RoleSelectionScreen = ({ navigation }) => {
         <Text style={styles.subtitle}>Çamaşır Yıkama Hizmetleri</Text>
       </View>
 
-      <View style={styles.rolesContainer}>
+      <View style={styles.panelWrapper}>
+        <View style={styles.rolesContainer}>
         <TouchableOpacity
           style={[styles.roleButton, styles.userButton]}
           onPress={() => navigation.navigate('Login', { role: 'user' })}
@@ -40,14 +41,10 @@ const RoleSelectionScreen = ({ navigation }) => {
           <Text style={styles.roleTitle}>Kurye</Text>
           <Text style={styles.roleDescription}>Teslimat yapmak istiyorum</Text>
         </TouchableOpacity>
+        </View>
       </View>
 
-      <View style={styles.footer}>
-        <Text style={styles.footerText}>Yeni kullanıcı mısınız?</Text>
-        <TouchableOpacity onPress={() => navigation.navigate('Register', { role: 'user' })}>
-          <Text style={styles.registerLink}>Kayıt Olun</Text>
-        </TouchableOpacity>
-      </View>
+      {/* Registration moved to panel-specific Login screens; no action here */}
     </View>
   );
 };
@@ -57,7 +54,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F5F5F5',
     padding: 20,
-    justifyContent: 'space-between',
+    justifyContent: 'flex-start',
   },
   header: {
     alignItems: 'center',
@@ -77,6 +74,11 @@ const styles = StyleSheet.create({
   rolesContainer: {
     marginVertical: 20,
     gap: 15,
+  },
+  panelWrapper: {
+    flex: 1,
+    justifyContent: 'center',
+    transform: [{ translateY: -40 }],
   },
   roleButton: {
     padding: 20,

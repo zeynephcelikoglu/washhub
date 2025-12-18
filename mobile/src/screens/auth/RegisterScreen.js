@@ -34,10 +34,17 @@ const RegisterScreen = ({ navigation, route }) => {
     setLoading(true);
     try {
       await signUp(name, email, password, phone, role);
+
+      setLoading(false);
+
+      Alert.alert('Başarılı', 'Kayıt başarılı. Lütfen giriş yapın.');
+
+      navigation.navigate('Login', { role });
+      return;
     } catch (error) {
+      setLoading(false);
       Alert.alert('Kayıt Hatası', error.message || 'Kayıt başarısız');
     }
-    setLoading(false);
   };
 
   return (
