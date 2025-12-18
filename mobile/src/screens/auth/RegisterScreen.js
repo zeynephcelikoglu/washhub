@@ -9,7 +9,17 @@ import {
   ActivityIndicator,
   ScrollView,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { AuthContext } from '../../context/AuthContext';
+import {
+  COLORS,
+  TYPOGRAPHY,
+  SPACING,
+  RADIUS,
+  SHADOWS,
+  getRoleColor,
+  getRoleName,
+} from '../../constants/authTheme';
 
 const RegisterScreen = ({ navigation, route }) => {
   const [name, setName] = useState('');
@@ -17,8 +27,11 @@ const RegisterScreen = ({ navigation, route }) => {
   const [password, setPassword] = useState('');
   const [phone, setPhone] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [focusedField, setFocusedField] = useState(null);
   const { signUp } = useContext(AuthContext);
   const role = route.params?.role || 'user';
+  const roleColor = getRoleColor(role);
 
   const handleRegister = async () => {
     if (!name || !email || !password || !phone) {
@@ -34,11 +47,8 @@ const RegisterScreen = ({ navigation, route }) => {
     setLoading(true);
     try {
       await signUp(name, email, password, phone, role);
-
       setLoading(false);
-
       Alert.alert('Başarılı', 'Kayıt başarılı. Lütfen giriş yapın.');
-
       navigation.navigate('Login', { role });
       return;
     } catch (error) {
@@ -47,83 +57,132 @@ const RegisterScreen = ({ navigation, route }) => {
     }
   };
 
+  const renderInput = (label, value, onChangeText, keyboardType = 'default', autoCapitalize = 'sentences', fieldName = null, isSecure = false) => {
+    const isFocused = focusedField === fieldName;
+
+    return (
+      <View style={styles.inputContainer}>
+        <Text style={styles.label}>{label}</Text>
+        <View
+          style={[
+            styles.inputWrapper,
+            isFocused && styles.inputWrapperFocused,
+          ]}
+        >
+          <TextInput
+            style={styles.input}
+            placeholder={label}
+            placeholderTextColor={COLORS.textPlaceholder}
+            value={value}
+            onChangeText={onChangeText}
+            onFocus={() => setFocusedField(fieldName)}
+            onBlur={() => setFocusedField(null)}
+            editable={!loading}
+            keyboardType={keyboardType}
+            autoCapitalize={autoCapitalize}
+            secureTextEntry={isSecure && !showPassword}
+          />
+          {isSecure && (
+            <TouchableOpacity
+              onPress={() => setShowPassword(!showPassword)}
+              style={styles.eyeIcon}
+            >
+              <Ionicons
+                name={showPassword ? 'eye' : 'eye-off'}
+                size={20}
+                color={COLORS.textSecondary}
+              />
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
+    );
+  };
+
   return (
-    <ScrollView style={styles.container}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.contentContainer}
+    >
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Text style={styles.backButton}>← Geri</Text>
+        <TouchableOpacity
+          onPress={() => navigation.goBack()}
+          style={styles.backButton}
+        >
+          <Ionicons name="chevron-back" size={28} color={COLORS.primary} />
         </TouchableOpacity>
-        <Text style={styles.title}>Kayıt Ol</Text>
       </View>
 
-      <View style={styles.roleLabel}>
-        <Text style={styles.roleText}>
-          Rol: <Text style={styles.roleName}>{role === 'user' ? 'Müşteri' : role === 'owner' ? 'İşletme Sahibi' : 'Kurye'}</Text>
+      <View style={styles.titleSection}>
+        <Text style={styles.title}>Hesap Oluştur</Text>
+        <Text style={styles.subtitle}>Hemen başlayalım</Text>
+      </View>
+
+      <View
+        style={[
+          styles.roleBadge,
+          { backgroundColor: roleColor.light },
+        ]}
+      >
+        <Ionicons
+          name={role === 'user' ? 'person' : role === 'owner' ? 'storefront' : 'bicycle'}
+          size={14}
+          color={roleColor.main}
+        />
+        <Text
+          style={[
+            styles.roleBadgeText,
+            { color: roleColor.main },
+          ]}
+        >
+          Rol: {getRoleName(role)}
         </Text>
       </View>
 
       <View style={styles.form}>
-        <View style={styles.inputGroup}>
-          <Text style={styles.label}>Ad Soyad</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Adınızı girin"
-            placeholderTextColor="#999"
-            value={name}
-            onChangeText={setName}
-            editable={!loading}
-          />
-        </View>
+        <Text style={styles.sectionHeader}>Kişisel Bilgiler</Text>
 
-        <View style={styles.inputGroup}>
-          <Text style={styles.label}>Email</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="example@email.com"
-            placeholderTextColor="#999"
-            value={email}
-            onChangeText={setEmail}
-            editable={!loading}
-            keyboardType="email-address"
-            autoCapitalize="none"
-          />
-        </View>
+        {renderInput('Ad Soyad', name, setName, 'default', 'words', 'name')}
+        {renderInput(
+          'Email',
+          email,
+          setEmail,
+          'email-address',
+          'none',
+          'email'
+        )}
+        {renderInput(
+          'Telefon',
+          phone,
+          setPhone,
+          'phone-pad',
+          'none',
+          'phone'
+        )}
 
-        <View style={styles.inputGroup}>
-          <Text style={styles.label}>Telefon</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="05XXXXXXXXX"
-            placeholderTextColor="#999"
-            value={phone}
-            onChangeText={setPhone}
-            editable={!loading}
-            keyboardType="phone-pad"
-          />
-        </View>
-
-        <View style={styles.inputGroup}>
-          <Text style={styles.label}>Şifre</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="En az 6 karakter"
-            placeholderTextColor="#999"
-            value={password}
-            onChangeText={setPassword}
-            editable={!loading}
-            secureTextEntry
-          />
-        </View>
+        {renderInput(
+          'Şifre',
+          password,
+          setPassword,
+          'default',
+          'none',
+          'password',
+          true
+        )}
 
         <TouchableOpacity
-          style={[styles.registerButton, loading && styles.disabledButton]}
+          style={[
+            styles.button,
+            loading && styles.buttonDisabled,
+          ]}
           onPress={handleRegister}
           disabled={loading}
+          activeOpacity={0.8}
         >
           {loading ? (
-            <ActivityIndicator color="#fff" />
+            <ActivityIndicator color={COLORS.cardBackground} />
           ) : (
-            <Text style={styles.registerButtonText}>Kayıt Ol</Text>
+            <Text style={styles.buttonText}>Kayıt Ol</Text>
           )}
         </TouchableOpacity>
       </View>
@@ -131,7 +190,7 @@ const RegisterScreen = ({ navigation, route }) => {
       <View style={styles.footer}>
         <Text style={styles.footerText}>Zaten hesabınız var mı?</Text>
         <TouchableOpacity onPress={() => navigation.navigate('Login', { role })}>
-          <Text style={styles.loginLink}>Giriş Yapın</Text>
+          <Text style={styles.linkText}>Giriş Yapın</Text>
         </TouchableOpacity>
       </View>
     </ScrollView>
@@ -141,92 +200,121 @@ const RegisterScreen = ({ navigation, route }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F5F5F5',
+    backgroundColor: COLORS.background,
+  },
+  contentContainer: {
+    paddingHorizontal: SPACING.xl,
+    paddingTop: SPACING.lg,
+    paddingBottom: SPACING.xxl,
   },
   header: {
-    paddingHorizontal: 20,
-    paddingVertical: 20,
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#EEE',
+    marginBottom: SPACING.lg,
   },
   backButton: {
-    fontSize: 16,
-    color: '#007AFF',
-    marginBottom: 10,
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+  },
+  titleSection: {
+    marginBottom: SPACING.xxxl,
   },
   title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#333',
+    fontSize: TYPOGRAPHY.h2.fontSize,
+    fontWeight: TYPOGRAPHY.h2.fontWeight,
+    color: COLORS.textPrimary,
+    marginBottom: SPACING.sm,
   },
-  roleLabel: {
-    paddingHorizontal: 20,
-    paddingVertical: 15,
-    backgroundColor: '#007AFF',
-    marginTop: 10,
-    marginHorizontal: 20,
-    borderRadius: 8,
+  subtitle: {
+    fontSize: TYPOGRAPHY.caption.fontSize,
+    color: COLORS.textSecondary,
+    lineHeight: 20,
   },
-  roleText: {
-    fontSize: 14,
-    color: '#fff',
+  roleBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    paddingHorizontal: SPACING.lg,
+    paddingVertical: SPACING.sm,
+    borderRadius: RADIUS.full,
+    marginBottom: SPACING.lg,
   },
-  roleName: {
-    fontWeight: 'bold',
-    fontSize: 16,
+  roleBadgeText: {
+    fontSize: TYPOGRAPHY.label.fontSize,
+    fontWeight: TYPOGRAPHY.label.fontWeight,
+    marginLeft: SPACING.sm,
   },
   form: {
-    paddingHorizontal: 20,
-    paddingTop: 30,
+    marginBottom: SPACING.xl,
   },
-  inputGroup: {
-    marginBottom: 20,
+  sectionHeader: {
+    fontSize: TYPOGRAPHY.label.fontSize,
+    fontWeight: TYPOGRAPHY.label.fontWeight,
+    color: COLORS.textPrimary,
+    marginTop: SPACING.xl,
+    marginBottom: SPACING.md,
+  },
+  inputContainer: {
+    marginBottom: SPACING.lg,
   },
   label: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 8,
+    fontSize: TYPOGRAPHY.label.fontSize,
+    fontWeight: TYPOGRAPHY.label.fontWeight,
+    color: COLORS.textPrimary,
+    marginBottom: SPACING.sm,
+  },
+  inputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.cardBackground,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    paddingHorizontal: SPACING.lg,
+    ...SHADOWS.sm,
+  },
+  inputWrapperFocused: {
+    borderColor: COLORS.borderFocus,
+    borderWidth: 2,
   },
   input: {
-    backgroundColor: '#fff',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#DDD',
-    paddingHorizontal: 15,
-    paddingVertical: 12,
-    fontSize: 14,
-    color: '#333',
+    flex: 1,
+    height: 52,
+    fontSize: TYPOGRAPHY.body.fontSize,
+    color: COLORS.textPrimary,
   },
-  registerButton: {
-    backgroundColor: '#007AFF',
-    borderRadius: 8,
-    paddingVertical: 14,
+  eyeIcon: {
+    padding: SPACING.sm,
+  },
+  button: {
+    height: 56,
+    backgroundColor: COLORS.primary,
+    borderRadius: RADIUS.md,
+    justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 10,
+    marginTop: SPACING.xl,
+    ...SHADOWS.md,
   },
-  disabledButton: {
-    opacity: 0.6,
+  buttonDisabled: {
+    backgroundColor: COLORS.border,
+    shadowOpacity: 0,
   },
-  registerButtonText: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#fff',
+  buttonText: {
+    fontSize: TYPOGRAPHY.button.fontSize,
+    fontWeight: TYPOGRAPHY.button.fontWeight,
+    color: COLORS.cardBackground,
   },
   footer: {
     alignItems: 'center',
-    paddingVertical: 30,
   },
   footerText: {
-    fontSize: 14,
-    color: '#666',
-    marginBottom: 5,
+    fontSize: TYPOGRAPHY.body.fontSize,
+    color: COLORS.textSecondary,
   },
-  loginLink: {
-    fontSize: 14,
-    color: '#007AFF',
-    fontWeight: 'bold',
+  linkText: {
+    fontSize: TYPOGRAPHY.bodyBold.fontSize,
+    fontWeight: TYPOGRAPHY.bodyBold.fontWeight,
+    color: COLORS.primary,
+    marginTop: SPACING.sm,
   },
 });
 
