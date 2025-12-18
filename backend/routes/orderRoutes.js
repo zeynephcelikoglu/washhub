@@ -16,4 +16,7 @@ router.patch('/:orderId/rate', auth, orderController.rateOrder);
 // Soft-hide an order for the requesting role
 router.patch('/:orderId/hide', auth, orderController.hideOrderForRole);
 
+// Delete an order (authorization and status checks are handled in controller)
+router.delete('/:orderId', auth, orderController.deleteOrder);
+
 module.exports = router;

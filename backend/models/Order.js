@@ -21,11 +21,14 @@ const orderSchema = new mongoose.Schema({
       name: String,
       quantity: Number,
       weight: Number,
+      product: { type: mongoose.Schema.Types.ObjectId, ref: 'Product', default: null },
+      productId: { type: String, default: null },
       serviceType: {
         type: String,
         enum: ['standard', 'express', 'dry_clean'],
         default: 'standard'
       },
+      originalServiceType: { type: String, default: null },
       price: Number
     }
   ],
