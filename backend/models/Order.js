@@ -56,7 +56,7 @@ const orderSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['pending_owner', 'courier_assigned', 'delivered', 'cancelled'],
+    enum: ['pending_owner', 'courier_assigned', 'courier_accepted', 'delivered', 'cancelled', 'completed'],
     default: 'pending_owner'
   },
   notes: {

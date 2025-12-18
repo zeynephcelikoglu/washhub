@@ -91,6 +91,7 @@ exports.getOrdersByCourier = async (req, res) => {
     const orders = await Order.find({
       $or: [
         { status: 'courier_assigned', $or: [{ courierId: courierId }, { courierId: null }, { courierId: { $exists: false } }] },
+        { status: 'courier_accepted', courierId: courierId },
         { status: { $in: ['delivered', 'cancelled'] }, courierId: courierId }
       ]
     })
@@ -115,7 +116,7 @@ exports.updateOrderStatus = async (req, res) => {
     const currentUserId = req.user.id;
     const currentUserRole = req.user.role || null;
 
-    const validStatuses = ['pending_owner', 'courier_assigned', 'delivered', 'cancelled'];
+    const validStatuses = ['pending_owner', 'courier_assigned', 'courier_accepted', 'delivered', 'cancelled'];
 
     if (!validStatuses.includes(status)) {
       return res.status(400).json({ message: 'Invalid status' });
@@ -130,7 +131,8 @@ exports.updateOrderStatus = async (req, res) => {
     // Status transitions allowed
     const statusFlow = {
       'pending_owner': ['courier_assigned', 'cancelled'],
-      'courier_assigned': ['delivered', 'cancelled'],
+      'courier_assigned': ['courier_accepted', 'delivered', 'cancelled'],
+      'courier_accepted': ['delivered', 'cancelled'],
       'delivered': [],
       'cancelled': []
     };
@@ -161,6 +163,88 @@ exports.updateOrderStatus = async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
+  }
+};
+
+// Courier explicitly accepts an order: assign courier and set status to courier_accepted
+exports.acceptCourier = async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const courierId = req.user.id;
+
+    const order = await Order.findById(orderId);
+    if (!order) return res.status(404).json({ message: 'Order not found' });
+
+    const nonAcceptStatuses = ['delivered', 'cancelled'];
+    if (nonAcceptStatuses.includes(order.status)) {
+      return res.status(400).json({ message: 'Cannot accept past orders' });
+    }
+
+    // assign and mark accepted
+    order.courierId = courierId;
+    order.status = 'courier_accepted';
+    await order.save();
+
+    const populated = await Order.findById(orderId).populate('userId', 'name phone email').populate('addressId').populate('courierId', 'name phone');
+
+    res.status(200).json({ success: true, order: populated });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// Courier rejects an order: remove courier assignment, set status to pending_courier, notify owner
+exports.rejectCourier = async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const courierId = req.user.id;
+
+    const order = await Order.findById(orderId);
+
+    if (!order) {
+      // Per requirements: never return error for reject action — return 200 with null order
+      return res.status(200).json({ success: false, order: null, message: 'Order not found' });
+    }
+
+    // If order is already past, still respond success but do not modify
+    const nonRejectStatuses = ['delivered', 'cancelled'];
+    if (nonRejectStatuses.includes(order.status)) {
+      return res.status(200).json({ success: true, order });
+    }
+
+    // If this courier is not the assigned courier, treat as no-op but return success
+    if (!order.courierId || order.courierId.toString() !== courierId) {
+      return res.status(200).json({ success: true, order });
+    }
+
+    // remove assignment and make it available for owner to reassign
+    order.courierId = null;
+    order.status = 'pending_courier';
+    await order.save();
+
+    const populated = await Order.findById(orderId).populate('userId', 'name phone email').populate('addressId');
+
+    // Fire-and-forget notification to owner
+    try {
+      const Notification = require('../models/Notification');
+      if (order.ownerId) {
+        await Notification.create({
+          userId: order.ownerId,
+          type: 'courier_rejected',
+          message: 'Kurye siparişi reddetti. Lütfen başka bir kurye seçiniz.',
+          orderId: order._id,
+        });
+      }
+    } catch (notifErr) {
+      // Do not block the main flow if notification creation fails
+      console.error('Notification creation failed:', notifErr?.message || notifErr);
+    }
+
+    return res.status(200).json({ success: true, order: populated });
+  } catch (error) {
+    // Per requirements: do not return 4xx/5xx for courier reject — return 200 with current error message
+    console.error('rejectCourier unexpected error:', error);
+    return res.status(200).json({ success: false, order: null, message: error.message });
   }
 };
 
