@@ -76,6 +76,22 @@ export const AuthProvider = ({ children }) => {
 
           const { token, user } = response.data;
 
+          // Client-side role enforcement: block login if returned role
+          // does not match the panel's expected role.
+          if (expectedRole && user?.role && user.role !== expectedRole) {
+            // Ensure no auth state is persisted
+            try {
+              await AsyncStorage.removeItem('userToken');
+              await AsyncStorage.removeItem('userData');
+            } catch (e) {
+              console.log('Error clearing storage after role mismatch', e);
+            }
+
+            dispatch({ type: 'SIGN_OUT' });
+
+            throw new Error('Bu hesap bu panel için kayıtlı değil.');
+          }
+
           await AsyncStorage.setItem('userToken', token);
           await AsyncStorage.setItem('userData', JSON.stringify(user));
 
@@ -84,11 +100,15 @@ export const AuthProvider = ({ children }) => {
           return user;
         } catch (error) {
           console.log(error);
-          throw error.response?.data?.message || "Login failed";
+          const message =
+            (error && error.response && error.response.data && error.response.data.message) ||
+            (error && error.message) ||
+            'Login failed';
+          throw new Error(message);
         }
       },
 
-      // REGISTER
+      // REGISTER - do not auto-login after signup
       signUp: async (name, email, password, phone, role) => {
         try {
           const response = await api.post('/auth/register', {
@@ -99,16 +119,22 @@ export const AuthProvider = ({ children }) => {
             role,
           });
 
-          const { token, user } = response.data;
+          // Ensure no auth state is persisted after registration
+          try {
+            await AsyncStorage.removeItem('userToken');
+            await AsyncStorage.removeItem('userData');
+          } catch (e) {
+            console.log('Error clearing storage after register', e);
+          }
 
-          await AsyncStorage.setItem('userToken', token);
-          await AsyncStorage.setItem('userData', JSON.stringify(user));
+          dispatch({ type: 'SIGN_OUT' });
 
-          dispatch({ type: 'SIGN_IN', token, user });
-
-          return user;
+          return response.data;
         } catch (error) {
-          throw error.response?.data?.message || "Register failed";
+          const message = (error && error.response && error.response.data && error.response.data.message) ||
+            (error && error.message) ||
+            'Register failed';
+          throw new Error(message);
         }
       },
 

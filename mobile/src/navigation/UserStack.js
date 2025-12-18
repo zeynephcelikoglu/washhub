@@ -13,6 +13,7 @@ import OrderReviewScreen from '../screens/user/OrderReviewScreen';
 import ServiceProductSelectionScreen from '../screens/user/ServiceProductSelectionScreen';
 import OrderAddressAndTimeScreen from '../screens/user/OrderAddressAndTimeScreen';
 import OrderSummaryScreen from '../screens/user/OrderSummaryScreen';
+import OrderDetailScreen from '../screens/user/OrderDetailScreen';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -76,6 +77,12 @@ function UserOrdersStack() {
         name="UserOrders"
         component={UserOrdersScreen}
         options={{ title: 'Siparişlerim' }}
+      />
+
+      <Stack.Screen
+        name="OrderDetail"
+        component={OrderDetailScreen}
+        options={{ title: 'Sipariş Detayı' }}
       />
     </Stack.Navigator>
   );
