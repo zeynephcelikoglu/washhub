@@ -19,6 +19,12 @@ export const orderApi = {
   assignCourier: (orderId) =>
     api.patch(`/orders/${orderId}/assign`),
 
+  acceptCourier: (orderId) =>
+    api.patch(`/orders/${orderId}/accept`),
+
+  rejectCourier: (orderId) =>
+    api.patch(`/orders/${orderId}/reject`),
+
   markDelivered: (orderId) =>
     api.patch(`/orders/${orderId}/status`, { status: 'delivered' }),
   

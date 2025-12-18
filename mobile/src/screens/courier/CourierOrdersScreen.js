@@ -14,17 +14,24 @@ import {
 import { AuthContext } from '../../context/AuthContext';
 import { orderApi } from '../../api/orderApi';
 import SwipeableOrderCard from '../../components/SwipeableOrderCard';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const CourierOrdersScreen = ({ navigation, route }) => {
   const { user } = useContext(AuthContext);
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [rejectedIds, setRejectedIds] = useState([]);
 
   // handle updatedOrder coming back from detail screen
   useEffect(() => {
     const updated = route?.params?.updatedOrder;
     if (updated) {
       setOrders(prev => {
+        // If courier rejected (order became pending_courier), remove from our list
+        if (updated.status === 'pending_courier') {
+          return prev.filter(o => o._id !== updated._id);
+        }
+
         const idx = prev.findIndex(o => o._id === updated._id);
         if (idx > -1) {
           const copy = [...prev];
@@ -44,6 +51,22 @@ const CourierOrdersScreen = ({ navigation, route }) => {
     return unsubscribe;
   }, [navigation]);
 
+  // load locally persisted rejected order ids for this courier
+  useEffect(() => {
+    const loadRejected = async () => {
+      try {
+        if (!user || !user.id) return;
+        const key = `rejectedOrders_${user.id}`;
+        const raw = await AsyncStorage.getItem(key);
+        const arr = raw ? JSON.parse(raw) : [];
+        setRejectedIds(arr);
+      } catch (e) {
+        console.error('Failed to load rejected ids', e);
+      }
+    };
+    loadRejected();
+  }, [user]);
+
   // Enable LayoutAnimation for Android
   useEffect(() => {
     if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -55,7 +78,10 @@ const CourierOrdersScreen = ({ navigation, route }) => {
     setLoading(true);
     try {
       const response = await orderApi.getOrdersForCourier();
-      setOrders(response.data.orders || []);
+      const all = response.data.orders || [];
+      // filter out orders this courier previously rejected
+      const filtered = all.filter(o => !rejectedIds.includes(o._id));
+      setOrders(filtered);
     } catch (error) {
       console.log('Siparişler yüklenemedi:', error);
     }
@@ -79,7 +105,9 @@ const CourierOrdersScreen = ({ navigation, route }) => {
   const getStatusText = (status) => {
     const statusMap = {
       'pending_owner': 'Beklemede',
-      'courier_assigned': 'Kurye Atandı',
+      'courier_assigned': 'Kurye bekleniyor',
+      'courier_accepted': 'Kurye kabul etti',
+      'pending_courier': 'Kurye bekleniyor',
       'delivered': 'Teslim Edildi',
       'cancelled': 'İptal Edildi'
     };
@@ -103,9 +131,7 @@ const CourierOrdersScreen = ({ navigation, route }) => {
         </View>
 
         <View style={styles.orderDetails}>
-          <Text style={styles.itemCount}>{item.items?.length || 0} öğe</Text>
-          <Text style={styles.address}>{item.addressId?.title}</Text>
-          <Text style={styles.address}>{item.addressId?.street}</Text>
+          <Text style={styles.itemCount}>Toplam Tutar: {item.totalPrice} ₺</Text>
         </View>
 
         <View style={styles.actionRow}>
@@ -114,7 +140,7 @@ const CourierOrdersScreen = ({ navigation, route }) => {
       </TouchableOpacity>
     );
 
-    const completedStatuses = ['delivered', 'cancelled'];
+    const completedStatuses = ['delivered', 'cancelled', 'completed'];
     if (completedStatuses.includes(item.status)) {
       return (
         <SwipeableOrderCard orderId={item._id} onDelete={handleDeleteOrder}>
@@ -135,9 +161,10 @@ const CourierOrdersScreen = ({ navigation, route }) => {
         </View>
       ) : (
         (() => {
-          // Split into active (courier_assigned) and history (delivered/cancelled assigned to me)
-          const activeOrders = orders.filter(o => o.status === 'courier_assigned' && !o.hiddenForCourier);
-          const historyOrders = orders.filter(o => ['delivered', 'cancelled'].includes(o.status) && !o.hiddenForCourier);
+          // Split into active (available/accepted) and history (delivered/cancelled/completed assigned to me)
+          const activeStatuses = ['courier_assigned', 'courier_accepted', 'courier_assigned_waiting'];
+          const activeOrders = orders.filter(o => activeStatuses.includes(o.status) && !o.hiddenForCourier);
+          const historyOrders = orders.filter(o => ['delivered', 'cancelled', 'completed'].includes(o.status) && !o.hiddenForCourier);
 
           if (activeOrders.length === 0 && historyOrders.length === 0) {
             return (

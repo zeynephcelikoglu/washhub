@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { orderApi } from '../../api/orderApi';
 import { AuthContext } from '../../context/AuthContext';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const CourierOrderDetailScreen = ({ route, navigation }) => {
   const { order } = route.params;
@@ -18,21 +19,7 @@ const CourierOrderDetailScreen = ({ route, navigation }) => {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    // If order is available (no courier assigned) and status is courier_assigned,
-    // claim it for the current courier when opening details
-    const tryAssign = async () => {
-      try {
-        if (orderState?.status === 'courier_assigned' && !orderState?.courierId) {
-          const res = await orderApi.assignCourier(orderState._id);
-          if (res?.data?.order) setOrderState(res.data.order);
-        }
-      } catch (err) {
-        // ignore assign errors (maybe another courier claimed it)
-        console.log('Assign claim failed:', err?.response?.data || err.message);
-      }
-    };
-
-    tryAssign();
+    // Intentionally do not auto-assign on open. Courier must tap Accept explicitly.
   }, []);
 
   const handleMarkDelivered = async () => {
@@ -86,17 +73,12 @@ const CourierOrderDetailScreen = ({ route, navigation }) => {
       </View>
 
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Hizmetler</Text>
-        {orderState.items?.map((item, idx) => (
-          <View key={idx} style={styles.itemRow}>
-            <Text style={styles.itemName}>{item.name}</Text>
-            <Text style={styles.itemPrice}>{item.price} ₺</Text>
-          </View>
-        ))}
-        <View style={styles.totalRow}>
-          <Text style={styles.totalLabel}>Toplam:</Text>
-          <Text style={styles.totalPrice}>{orderState.totalPrice} ₺</Text>
-        </View>
+            <Text style={styles.sectionTitle}>Hizmetler</Text>
+            {/* Courier should not see item details; only total price */}
+            <View style={styles.totalRow}>
+              <Text style={styles.totalLabel}>Toplam Tutar:</Text>
+              <Text style={styles.totalPrice}>{orderState.totalPrice} ₺</Text>
+            </View>
       </View>
 
       <View style={styles.section}>
@@ -124,17 +106,98 @@ const CourierOrderDetailScreen = ({ route, navigation }) => {
         </View>
       )}
 
-      <TouchableOpacity
-        style={[styles.deliverButton, loading && styles.disabledButton]}
-        onPress={handleMarkDelivered}
-        disabled={loading}
-      >
-        {loading ? (
-          <ActivityIndicator color="#fff" />
-        ) : (
-          <Text style={styles.deliverButtonText}>✓ Teslim Edildi</Text>
-        )}
-      </TouchableOpacity>
+      {/* Action buttons: Accept / Reject (for active incoming orders) */}
+      {(() => {
+        const pastStatuses = ['delivered', 'cancelled', 'completed'];
+        const activeAcceptStatuses = ['pending_courier', 'courier_assigned', 'courier_assigned_waiting'];
+
+        // If past status -> read-only
+        if (pastStatuses.includes(orderState.status)) return null;
+
+        // If order is active and awaiting courier decision, show Accept/Reject
+        if (activeAcceptStatuses.includes(orderState.status) && (!orderState.courierId || orderState.courierId._id === user.id)) {
+          return (
+            <View style={styles.actionButtonsRow}>
+              <TouchableOpacity
+                style={[styles.rejectButton, loading && styles.disabledButton]}
+                onPress={() => {
+                  Alert.alert('Siparişi Reddet', 'Bu siparişi reddetmek istiyor musunuz?', [
+                    { text: 'Vazgeç', style: 'cancel' },
+                    { text: 'Reddet', style: 'destructive', onPress: async () => {
+                      setLoading(true);
+                      try {
+                        const res = await orderApi.rejectCourier(orderState._id);
+                        const updated = res?.data?.order || null;
+                        // persist rejected id so this courier never sees it again
+                        try {
+                          const key = `rejectedOrders_${user.id}`;
+                          const raw = await AsyncStorage.getItem(key);
+                          const arr = raw ? JSON.parse(raw) : [];
+                          if (!arr.includes(orderState._id)) {
+                            arr.push(orderState._id);
+                            await AsyncStorage.setItem(key, JSON.stringify(arr));
+                          }
+                        } catch (e) {
+                          console.error('Failed to persist rejected order locally', e);
+                        }
+                        // Remove from courier list / navigate back
+                        Alert.alert('Başarılı', 'Sipariş reddedildi', [
+                          { text: 'Tamam', onPress: () => navigation.navigate('CourierOrdersList', { updatedOrder: updated }) }
+                        ]);
+                      } catch (error) {
+                        Alert.alert('Hata', error?.response?.data?.message || error.message || 'İşlem başarısız');
+                      }
+                      setLoading(false);
+                    }}
+                  ]);
+                }}
+                disabled={loading}
+              >
+                <Text style={styles.rejectButtonText}>✕ Reddet</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.acceptButton, loading && styles.disabledButton]}
+                onPress={async () => {
+                  setLoading(true);
+                  try {
+                    const res = await orderApi.acceptCourier(orderState._id);
+                    const updated = res?.data?.order || null;
+                    Alert.alert('Başarılı', 'Sipariş kabul edildi', [
+                      { text: 'Tamam', onPress: () => navigation.navigate('CourierOrdersList', { updatedOrder: updated }) }
+                    ]);
+                  } catch (error) {
+                    Alert.alert('Hata', error?.response?.data?.message || error.message || 'İşlem başarısız');
+                  }
+                  setLoading(false);
+                }}
+                disabled={loading}
+              >
+                <Text style={styles.acceptButtonText}>✓ Kabul Et</Text>
+              </TouchableOpacity>
+            </View>
+          );
+        }
+
+        // If courier is assigned and status is courier_accepted, show deliver button (only for assigned courier)
+        if (orderState.status === 'courier_accepted' && orderState.courierId && orderState.courierId._id === user.id) {
+          return (
+            <TouchableOpacity
+              style={[styles.deliverButton, loading && styles.disabledButton]}
+              onPress={handleMarkDelivered}
+              disabled={loading}
+            >
+              {loading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.deliverButtonText}>✓ Teslim Edildi</Text>
+              )}
+            </TouchableOpacity>
+          );
+        }
+
+        return null;
+      })()}
 
       {/* If current user is not the assigned courier, show hint */}
       {orderState?.courierId && orderState?.courierId._id && orderState.courierId._id !== user.id && (
@@ -298,6 +361,38 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
     color: '#fff',
+  },
+  actionButtonsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 15,
+    paddingVertical: 20,
+  },
+  acceptButton: {
+    flex: 1,
+    backgroundColor: '#34C759',
+    paddingVertical: 14,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginLeft: 8,
+  },
+  acceptButtonText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 15,
+  },
+  rejectButton: {
+    flex: 1,
+    backgroundColor: '#FF3B30',
+    paddingVertical: 14,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginRight: 8,
+  },
+  rejectButtonText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 15,
   },
 });
 
