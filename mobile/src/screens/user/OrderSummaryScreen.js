@@ -25,21 +25,23 @@ const OrderSummaryScreen = ({ navigation, route }) => {
   // Normalize selectedProducts to a flat shape used by UI and payload
   const normalizeSelectedProducts = (raw = []) => {
     return raw.map(item => {
-      // shape: { product: {...}, quantity }
-      if (item && item.product && typeof item.product === 'object') {
+      if (!item) return null;
+      
+      // shape: { product: {...}, quantity, productId, name, price, serviceType }
+      if (item.product && typeof item.product === 'object') {
         const prod = item.product;
-        const pid = prod._id || prod.id || item.productId || item._id || item.id;
+        const pid = prod._id || prod.id || item.productId;
         return {
           id: pid ? String(pid) : undefined,
           productId: pid ? String(pid) : undefined,
           name: prod.name || prod.title || item.name || '',
-          price: Number(prod.price || prod.basePrice || 0),
+          price: Number(prod.price || prod.basePrice || item.price || 0),
           quantity: Number(item.quantity || item.qty || 0),
-          serviceType: prod.serviceType || prod.type || item.serviceType || null,
+          serviceType: item.serviceType || prod.serviceType || prod.type || null,
         };
       }
 
-      // shape: { productId, name, price, quantity, serviceType }
+      // shape: { productId, name, price, quantity, serviceType } (from repeat orders)
       const pid = item.productId || item._id || item.id;
       return {
         id: pid ? String(pid) : undefined,
@@ -49,14 +51,20 @@ const OrderSummaryScreen = ({ navigation, route }) => {
         quantity: Number(item.quantity || item.qty || 0),
         serviceType: item.serviceType || item.type || null,
       };
-    });
+    }).filter(p => p !== null);
   };
 
   const normalizedProducts = useMemo(() => normalizeSelectedProducts(selectedProducts || []), [selectedProducts]);
 
-  const calculatedTotal = useMemo(() => normalizedProducts.reduce((s, p) => s + (p.price || 0) * (p.quantity || 0), 0), [normalizedProducts]);
+  // Final items derived from `selectedProducts` (single source of truth)
+  const finalItems = useMemo(() => (
+    (normalizedProducts || []).filter(p => p && (Number(p.quantity) || 0) > 0 && (p.productId || p.id))
+  ), [normalizedProducts]);
 
-  const total = isRepeatOrder && originalTotalPrice !== undefined ? originalTotalPrice : calculatedTotal;
+  const calculatedTotal = useMemo(() => finalItems.reduce((s, p) => s + (Number(p.price) || 0) * (Number(p.quantity) || 0), 0), [finalItems]);
+
+  // Always recalculate total from items (keeps repeat and normal flows consistent)
+  const total = calculatedTotal;
 
   useEffect(() => {
     const loadAddress = async () => {
@@ -98,55 +106,53 @@ const OrderSummaryScreen = ({ navigation, route }) => {
   const handleConfirm = async () => {
     if (readOnly) return;
     // Build and validate payload exactly as backend expects
-    const svc = (typeof selectedService === 'string') ? selectedService : (selectedService?.serviceType || selectedService?.type || selectedService?.value || selectedService?.name);
+    
+    // Ensure items include only product and quantity, taken only from selectedProducts (single source of truth)
+    const items = (finalItems || [])
+      .map(p => ({ product: String(p.productId || p.id), quantity: Number(p.quantity) }));
 
-    // Ensure items include only product and quantity, filter out zero quantities
-    const items = (normalizedProducts || [])
-      .filter(p => p && Number(p.quantity) > 0)
-      .map(p => ({ product: String(p.productId), quantity: Number(p.quantity) }));
+    // Filter out invalid entries just in case
+    const filteredItems = items.filter(i => i.product && Number(i.quantity) > 0);
 
     const addrId = (typeof address === 'string') ? address : (addressObj?._id || address?.id || address?._id);
 
     // Build payload matching backend controller expectations
-    // NOTE: backend in repo expects `addressId: ObjectId`.
-    // Some deployments may expect `address` instead; include both to be robust.
+    // Backend expects: items[], totalPrice, pickupDate, pickupTime, deliveryDate, deliveryTime, addressId, notes
     const payload = {
-      serviceType: svc,
-      items,
+      items: filteredItems,
       addressId: addrId,
-      // include `address` too: if we have full address object, send it; otherwise send id string
-      address: addressObj ? addressObj : addrId,
       pickupDate: pickupDate,
       pickupTime: pickupTime,
       deliveryDate: deliveryDate,
       deliveryTime: deliveryTime,
       notes: notes || '',
-      totalPrice: isRepeatOrder && originalTotalPrice !== undefined ? Number(originalTotalPrice) : Number(total.toFixed(2)),
+      totalPrice: Number(total.toFixed(2)),
     };
 
-    // Debug payload prior to sending
-    console.log('PAYLOAD', payload);
-    console.log('FINAL PAYLOAD', payload);
+    // Debug items and payload prior to sending
+    console.log('FINAL ITEMS', filteredItems);
+    console.log('ORDER PAYLOAD', payload);
 
     // Basic validation to avoid 400 from backend
-    if (!payload.serviceType || typeof payload.serviceType !== 'string') {
-      Alert.alert('Hata', 'Servis tipi seçimi geçersiz. Lütfen tekrar deneyin.');
+    // For repeat orders: skip service type and products validation (already from original order)
+    // For normal orders: validate all fields
+    
+    // Block submit if no valid items
+    if (!Array.isArray(filteredItems) || filteredItems.length === 0) {
+      Alert.alert('Hata', 'Seçilen sepette ürün bulunamadı');
       return;
     }
-    if (!Array.isArray(payload.items) || payload.items.length === 0) {
-      Alert.alert('Hata', 'En az bir ürün seçmelisiniz.');
-      return;
-    }
-    if (!payload.items.every(i => i.product && (typeof i.quantity === 'number') && i.quantity > 0)) {
-      Alert.alert('Hata', 'Ürün verileri geçersiz.');
-      return;
-    }
-    if (!payload.addressId && !payload.address) {
+
+    if (!payload.addressId) {
       Alert.alert('Hata', 'Adres bilgisi eksik.');
       return;
     }
     if (!payload.pickupDate || !payload.pickupTime || !payload.deliveryDate || !payload.deliveryTime) {
       Alert.alert('Hata', 'Alış veya teslim zamanı geçersiz.');
+      return;
+    }
+    if (!payload.totalPrice || payload.totalPrice <= 0) {
+      Alert.alert('Hata', 'Toplam fiyat geçersiz.');
       return;
     }
 
@@ -170,7 +176,7 @@ const OrderSummaryScreen = ({ navigation, route }) => {
 
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Ürünler</Text>
-          {normalizedProducts.length === 0 ? (
+          {finalItems.length === 0 ? (
             <Text style={styles.muted}>Seçilen ürün yok</Text>
           ) : (
             (() => {
@@ -182,7 +188,7 @@ const OrderSummaryScreen = ({ navigation, route }) => {
                   groups[key].push(p);
                 });
                 return groups;
-              })(normalizedProducts);
+              })(finalItems);
 
               return Object.entries(grouped).map(([serviceType, items]) => (
                 <View key={serviceType} style={styles.serviceGroup}>
@@ -194,8 +200,8 @@ const OrderSummaryScreen = ({ navigation, route }) => {
                         <Text style={styles.productQty}>Adet: {item.quantity}</Text>
                       </View>
                       <View style={{ alignItems: 'flex-end' }}>
-                        <Text style={styles.productPrice}>{item.price.toFixed(2)}₺</Text>
-                        <Text style={styles.productSubtotal}>{(item.price * item.quantity).toFixed(2)}₺</Text>
+                        <Text style={styles.productPrice}>{(Number(item.price) || 0).toFixed(2)}₺</Text>
+                        <Text style={styles.productSubtotal}>{((Number(item.price) || 0) * (Number(item.quantity) || 0)).toFixed(2)}₺</Text>
                       </View>
                     </View>
                   ))}

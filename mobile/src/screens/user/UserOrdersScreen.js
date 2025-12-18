@@ -73,33 +73,55 @@ const UserOrdersScreen = () => {
   };
 
   const handleRepeatOrder = async (order) => {
-    // New behavior: do NOT alert and do NOT create immediately.
-    // Instead, rebuild selectedProducts and navigate to OrderAddressAndTime
     try {
-      setRepeatLoadingId(order._id);
+      const firstItem = order.items && order.items.length > 0 ? order.items[0] : null;
+      const serviceType = firstItem?.serviceType || 'washing';
 
-      // Build selectedProducts in shapes accepted by OrderAddressAndTime / OrderSummary
       const selectedProducts = (order.items || []).map(i => {
-        // if i.product is an object, keep it; if it's an id string, provide productId
-        if (i && i.product && typeof i.product === 'object') {
-          return { product: i.product, quantity: i.quantity };
+        if (!i) return null;
+        if (i.product && typeof i.product === 'object') {
+          const prod = i.product;
+          return { 
+            product: prod, 
+            productId: prod._id || prod.id, 
+            quantity: i.quantity,
+            name: prod.name || prod.title,
+            price: prod.price || prod.basePrice || 0,
+            serviceType: i.serviceType || serviceType
+          };
         }
-        return { productId: i.product || i.productId || i._id, name: i.name || i.title || '', price: i.price || i.basePrice || 0, quantity: i.quantity };
-      });
+        if (i.productId) {
+          return { 
+            productId: i.productId, 
+            name: i.name || '', 
+            price: i.price || 0, 
+            quantity: i.quantity,
+            serviceType: i.serviceType || serviceType
+          };
+        }
+        if (i.product && typeof i.product === 'string') {
+          return { 
+            productId: i.product, 
+            name: i.name || '', 
+            price: i.price || 0, 
+            quantity: i.quantity,
+            serviceType: i.serviceType || serviceType
+          };
+        }
+        return null;
+      }).filter(p => p !== null);
 
-      // navigate into the HomeTab stack to reuse the normal create-order flow
-      try {
-        navigation.navigate('HomeTab', { screen: 'OrderAddressAndTime', params: { selectedService: order.serviceType, selectedProducts, originalTotalPrice: order.totalPrice, isRepeatOrder: true } });
-      } catch (navErr) {
-        console.log('Navigation error', navErr);
-        Alert.alert('Hata', 'Tekrar sipariş işlemi başlatılamadı');
-      } finally {
-        // clear loading marker after brief delay so UI updates
-        setTimeout(() => setRepeatLoadingId(null), 700);
-      }
+      navigation.navigate('HomeTab', { 
+        screen: 'OrderAddressAndTime', 
+        params: { 
+          selectedService: serviceType, 
+          selectedProducts, 
+          originalTotalPrice: order.totalPrice, 
+          isRepeatOrder: true 
+        } 
+      });
     } catch (err) {
-      console.log('Repeat navigation error', err);
-      setRepeatLoadingId(null);
+      console.log('Repeat order error', err);
       Alert.alert('Hata', 'Tekrar sipariş işlemi sırasında bir hata oluştu');
     }
   };
@@ -138,20 +160,6 @@ const UserOrdersScreen = () => {
 
     const card = (
       <View style={styles.orderCard}>
-        {isCompleted && (
-          <TouchableOpacity
-            style={styles.repeatIcon}
-            onPress={() => handleRepeatOrder(item)}
-            disabled={repeatLoadingId === item._id}
-            activeOpacity={0.6}
-          >
-            {repeatLoadingId === item._id ? (
-              <ActivityIndicator size="small" color="#007AFF" />
-            ) : (
-              <Ionicons name="refresh" size={16} color="#007AFF" />
-            )}
-          </TouchableOpacity>
-        )}
 
         <View style={styles.orderHeader}>
           <Text style={styles.orderId}>Sipariş #{item._id?.slice(-6)}</Text>
@@ -179,41 +187,9 @@ const UserOrdersScreen = () => {
 
     const handlePressCard = async () => {
       try {
-        // Build selectedProducts in the shape OrderSummary expects
-        const selectedProducts = (item.items || []).map(i => {
-          if (i && i.product && typeof i.product === 'object') {
-            return { product: i.product, quantity: i.quantity };
-          }
-          // fallback shape
-          return { productId: i.product || i.productId || i._id, name: i.name || '', price: i.price || 0, quantity: i.quantity };
-        });
-
-        const pickupDate = item.pickupDate ? new Date(item.pickupDate).toISOString().split('T')[0] : undefined;
-        const pickupTime = item.pickupTime || '';
-        const deliveryDate = item.deliveryDate ? new Date(item.deliveryDate).toISOString().split('T')[0] : undefined;
-        const deliveryTime = item.deliveryTime || '';
-
-        // Navigate into HomeTab's stack where OrderSummary is registered
-        navigation.navigate('HomeTab', {
-          screen: 'OrderSummary',
-          params: {
-            // Populate the params OrderSummary normally expects so it shows this order
-            selectedService: item.serviceType,
-            selectedProducts,
-            address: item.address || item.addressId,
-            pickupDate,
-            pickupTime,
-            deliveryDate,
-            deliveryTime,
-            notes: item.notes || '',
-            // inform summary this is read-only view
-            readOnly: true,
-            // also pass full order object for reference if needed
-            order: item,
-          },
-        });
+        navigation.navigate('OrderDetail', { order: item });
       } catch (err) {
-        console.log('Navigate to OrderSummary error', err);
+        console.log('Navigate to OrderDetail error', err);
         Alert.alert('Hata', 'Sipariş detayları açılamadı');
       }
     };
@@ -272,16 +248,6 @@ const styles = StyleSheet.create({
     shadowRadius: 3,
     elevation: 2,
   },
-  repeatIcon: {
-  position: 'absolute',
-  bottom: 8,
-  right: 8,
-  zIndex: 2,
-  backgroundColor: 'lightgray', 
-  padding: 6,
-  borderRadius: 16,
-},
-
   orderHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 },
   orderId: { fontSize: 14, fontWeight: 'bold', color: '#333' },
   statusBadge: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12 },

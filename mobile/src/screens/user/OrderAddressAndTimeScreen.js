@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useContext } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput, ActivityIndicator, Alert, FlatList, Platform } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput, Alert, FlatList, Platform, Modal, TouchableWithoutFeedback } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { addressApi } from '../../api/addressApi';
 import { AuthContext } from '../../context/AuthContext';
@@ -11,16 +11,83 @@ const OrderAddressAndTimeScreen = ({ navigation, route }) => {
   const [selectedAddress, setSelectedAddress] = useState(null);
 
   const [pickupDate, setPickupDate] = useState(new Date());
-  const [pickupTime, setPickupTime] = useState(new Date());
+  const [pickupTime, setPickupTime] = useState(null); // Date object for selected pickup slot
   const [deliveryDate, setDeliveryDate] = useState(new Date(Date.now() + 2 * 24 * 60 * 60 * 1000));
-  const [deliveryTime, setDeliveryTime] = useState(new Date(Date.now() + 2 * 24 * 60 * 60 * 1000));
+  const [deliveryTime, setDeliveryTime] = useState(null); // Date object for selected delivery slot
 
   const [openPicker, setOpenPicker] = useState(null);
   const [validationError, setValidationError] = useState(null);
   const [notes, setNotes] = useState('');
+  const [isPickupModalOpen, setIsPickupModalOpen] = useState(false);
+  const [isDeliveryModalOpen, setIsDeliveryModalOpen] = useState(false);
+
+  // slot-based helpers
+  const INTERVAL_MINUTES = 30;
+  const WORK_START = 8; // 08:00
+  const WORK_END = 19; // 19:00
+
+  const roundUpToInterval = (date, interval) => {
+    const ms = 1000 * 60 * interval;
+    return new Date(Math.ceil(date.getTime() / ms) * ms);
+  };
+
+  const formatTime = (d) => d.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+
+  const isSameDay = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+
+  const generateSlots = (date, minAllowedDateTime = null) => {
+    const slots = [];
+    const start = new Date(date);
+    start.setHours(WORK_START, 0, 0, 0);
+    const end = new Date(date);
+    end.setHours(WORK_END, 0, 0, 0);
+
+    for (let t = new Date(start); t <= end; t = new Date(t.getTime() + INTERVAL_MINUTES * 60 * 1000)) {
+      slots.push(new Date(t));
+    }
+    // return all slots; callers will mark disabled based on minAllowedDateTime
+    return slots;
+  };
+
+  // Centralized time logic
+  const getEarliestPickupDateTime = (now) => {
+    // If now is within working hours, earliest is now + 1 hour rounded up
+    if (now.getHours() >= WORK_START && now.getHours() < WORK_END) {
+      const earliest = new Date(now.getTime() + 60 * 60 * 1000);
+      return roundUpToInterval(earliest, INTERVAL_MINUTES);
+    }
+    // outside working hours -> no same-day pickups
+    return null;
+  };
+
+  const buildPickupSlots = (date, now) => {
+    const slots = generateSlots(date, null);
+    if (!isSameDay(date, now)) {
+      return slots.map(s => ({ slot: s, disabled: false }));
+    }
+
+    const earliest = getEarliestPickupDateTime(now);
+    if (!earliest) {
+      // today is outside working hours -> mark all slots disabled
+      return slots.map(s => ({ slot: s, disabled: true }));
+    }
+
+    return slots.map(s => ({ slot: s, disabled: s < earliest }));
+  };
+
+  const buildDeliverySlots = (date, pickupDateTime) => {
+    const slots = generateSlots(date, null);
+    if (!pickupDateTime) return slots.map(s => ({ slot: s, disabled: true }));
+
+    const minAllowed = new Date(pickupDateTime.getTime() + 3 * 60 * 60 * 1000);
+    return slots.map(s => ({ slot: s, disabled: s < minAllowed }));
+  };
+
+  
 
   const { user } = useContext(AuthContext);
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { if (user?.id) fetchAddresses(); }, [user?.id]);
 
   const fetchAddresses = async () => {
@@ -39,34 +106,94 @@ const OrderAddressAndTimeScreen = ({ navigation, route }) => {
 
   const validateTimes = () => {
     try {
-      const pickupDateTime = new Date(pickupDate);
-      pickupDateTime.setHours(pickupTime.getHours(), pickupTime.getMinutes(), 0, 0);
-      const deliveryDateTime = new Date(deliveryDate);
-      deliveryDateTime.setHours(deliveryTime.getHours(), deliveryTime.getMinutes(), 0, 0);
-      const now = new Date();
+      setValidationError(null);
 
-      if (pickupDateTime < now) { setValidationError('Geçmiş bir tarih veya saat seçemezsiniz.'); return false; }
-      const pickupHour = pickupTime.getHours();
-      if (pickupHour < 8 || pickupHour >= 19) { setValidationError('Alış saati 08:00–19:00 arasında olmalıdır.'); return false; }
-      const oneHourLater = new Date(now.getTime() + 60 * 60 * 1000);
-      if (pickupDateTime < oneHourLater) { setValidationError('En erken bir saat sonrasına randevu oluşturabilirsiniz.'); return false; }
-      const threeHoursAfterPickup = new Date(pickupDateTime.getTime() + 3 * 60 * 60 * 1000);
-      if (deliveryDateTime < threeHoursAfterPickup) { setValidationError('Teslimat saati, alış saatinden en az üç saat sonra olmalıdır.'); return false; }
-      const deliveryHour = deliveryTime.getHours();
-      const deliveryMinute = deliveryTime.getMinutes();
-      if (deliveryHour < 8 || deliveryHour > 19 || (deliveryHour === 19 && deliveryMinute > 0)) { setValidationError('Teslimat saati 08:00–19:00 arasında olmalıdır.'); return false; }
-      setValidationError(null); return true;
+      if (!pickupTime) { setValidationError('Lütfen alış saati seçin.'); return false; }
+      if (!deliveryTime) { setValidationError('Lütfen teslim saati seçin.'); return false; }
+
+      const pickupDateTime = pickupTime;
+      const deliveryDateTime = deliveryTime;
+
+      const nowLocal = new Date();
+
+      // Working hours check
+      if (pickupDateTime.getHours() < WORK_START || (pickupDateTime.getHours() > WORK_END) || (pickupDateTime.getHours() === WORK_END && pickupDateTime.getMinutes() > 0)) {
+        setValidationError('Alış saati 08:00 – 19:00 arasında olmalıdır.'); return false;
+      }
+
+      if (deliveryDateTime.getHours() < WORK_START || (deliveryDateTime.getHours() > WORK_END) || (deliveryDateTime.getHours() === WORK_END && deliveryDateTime.getMinutes() > 0)) {
+        setValidationError('Teslim saati 08:00 – 19:00 arasında olmalıdır.'); return false;
+      }
+
+      // Same-day earliest pickup rule
+      if (isSameDay(pickupDateTime, nowLocal)) {
+        const earliest = new Date(nowLocal.getTime() + 60 * 60 * 1000);
+        if (pickupDateTime < earliest) {
+          setValidationError(`Bugün için en erken teslim alma saati ${formatTime(roundUpToInterval(earliest, INTERVAL_MINUTES))} olabilir.`);
+          return false;
+        }
+      }
+
+      // Delivery must be at least 3 hours after pickup
+      const minDelivery = new Date(pickupDateTime.getTime() + 3 * 60 * 60 * 1000);
+      if (deliveryDateTime < minDelivery) {
+        setValidationError('Teslim saati, teslim alma saatinden en az 3 saat sonra olmalıdır.'); return false;
+      }
+
+      setValidationError(null);
+      return true;
     } catch (err) { console.log(err); setValidationError('Tarih ve saat doğrulaması yapılamadı.'); return false; }
   };
 
-  const handlePickupDateChange = (event, selectedDate) => { if (selectedDate) setPickupDate(selectedDate); setOpenPicker(null); };
-  const handlePickupTimeChange = (event, selectedTime) => { if (selectedTime) setPickupTime(selectedTime); setOpenPicker(null); };
-  const handleDeliveryDateChange = (event, selectedDate) => { if (selectedDate) setDeliveryDate(selectedDate); setOpenPicker(null); };
-  const handleDeliveryTimeChange = (event, selectedTime) => { if (selectedTime) setDeliveryTime(selectedTime); setOpenPicker(null); };
+  const handlePickupDateChange = (event, selectedDate) => {
+    if (selectedDate) {
+      setPickupDate(selectedDate);
+      // clear existing selections that may be invalid for new date
+      if (pickupTime) setPickupTime(null);
+      if (deliveryTime) setDeliveryTime(null);
+      // clear delivery date if it's now before the new pickup date
+      if (deliveryDate < selectedDate) {
+        setDeliveryDate(new Date(selectedDate.getTime() + 2 * 24 * 60 * 60 * 1000));
+      }
+      setValidationError(null);
+    }
+    setOpenPicker(null);
+  };
+
+  const handleDeliveryDateChange = (event, selectedDate) => {
+    if (selectedDate) {
+      setDeliveryDate(selectedDate);
+      // clear delivery time if it no longer fits
+      if (deliveryTime) setDeliveryTime(null);
+      setValidationError(null);
+    }
+    setOpenPicker(null);
+  };
+
+  const handleSelectPickupSlot = (slot) => {
+    setPickupTime(slot);
+    // if delivery exists but now invalid, clear it and show message
+    if (deliveryTime) {
+      const minDelivery = new Date(slot.getTime() + 3 * 60 * 60 * 1000);
+      if (deliveryTime < minDelivery) {
+        setDeliveryTime(null);
+        setValidationError('Teslim saati, teslim alma saatinden en az 3 saat sonra olmalıdır. Lütfen yeni bir teslim saati seçin.');
+      } else {
+        setValidationError(null);
+      }
+    }
+    setOpenPicker(null);
+  };
+
+  const handleSelectDeliverySlot = (slot) => {
+    setDeliveryTime(slot);
+    setValidationError(null);
+    setOpenPicker(null);
+  };
 
   const handleContinue = () => {
-    if (!validateTimes()) { Alert.alert('Tarih Hatası', validationError || 'Geçersiz tarih/saat'); return; }
-    if (!selectedAddress) { Alert.alert('Hata', 'Lütfen teslimat adresi seçin'); return; }
+    if (!validateTimes()) return;
+    if (!selectedAddress) { setValidationError('Lütfen bir teslimat adresi seçin.'); return; }
     navigation.navigate('OrderSummary', { selectedService, selectedProducts, address: selectedAddress, pickupDate: pickupDate.toISOString().split('T')[0], pickupTime: pickupTime.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }), deliveryDate: deliveryDate.toISOString().split('T')[0], deliveryTime: deliveryTime.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }), notes, originalTotalPrice, isRepeatOrder });
   };
 
@@ -74,7 +201,7 @@ const OrderAddressAndTimeScreen = ({ navigation, route }) => {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 140 }}>
-      <View style={styles.section}><Text style={styles.sectionTitle}>📍 Teslimat Adresi</Text>
+      <View style={styles.section}><Text style={styles.sectionTitle}>Teslimat Adresi</Text>
         {addresses.length === 0 ? (
           <TouchableOpacity style={styles.addAddressBtn} onPress={() => navigation.navigate('AddressesTab')}><Text style={styles.addAddressText}>Adres Eklemek İçin Tıklayın</Text></TouchableOpacity>
         ) : (
@@ -87,33 +214,120 @@ const OrderAddressAndTimeScreen = ({ navigation, route }) => {
         )}
       </View>
 
-      <View style={styles.section}><Text style={styles.sectionTitle}>📅 Tarih & Saat</Text>
-        {validationError && <View style={styles.errorBanner}><Text style={styles.errorBannerText}>⚠️ {validationError}</Text></View>}
+      <View style={styles.section}><Text style={styles.sectionTitle}>Randevu Zamanı</Text>
+        {validationError && <View style={styles.errorBanner}><Text style={styles.errorBannerText}>{validationError}</Text></View>}
 
         <View style={styles.card}><Text style={styles.cardTitle}>Alış Tarihi & Saati</Text>
           <Text style={styles.fieldLabel}>Alış Tarihi</Text>
           <TouchableOpacity style={styles.inputBtn} onPress={() => setOpenPicker(openPicker === 'pickupDate' ? null : 'pickupDate')}><Text style={styles.inputBtnText}>{pickupDate.toLocaleDateString('tr-TR')}</Text></TouchableOpacity>
           <Text style={styles.fieldLabel}>Alış Saati</Text>
-          <TouchableOpacity style={styles.inputBtn} onPress={() => setOpenPicker(openPicker === 'pickupTime' ? null : 'pickupTime')}><Text style={styles.inputBtnText}>{pickupTime.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}</Text></TouchableOpacity>
+          <TouchableOpacity style={styles.inputBtn} onPress={() => setIsPickupModalOpen(true)}>
+            <Text style={styles.inputBtnText}>{pickupTime ? formatTime(pickupTime) : 'Alış saati seçin'}</Text>
+          </TouchableOpacity>
           {openPicker === 'pickupDate' && <DateTimePicker value={pickupDate} mode="date" display={Platform.OS === 'ios' ? 'inline' : 'default'} onChange={handlePickupDateChange} minimumDate={minDate} />}
-          {openPicker === 'pickupTime' && <DateTimePicker value={pickupTime} mode="time" display={Platform.OS === 'ios' ? 'inline' : 'default'} onChange={handlePickupTimeChange} />}
         </View>
 
         <View style={styles.card}><Text style={styles.cardTitle}>Teslim Tarihi & Saati</Text>
           <Text style={styles.fieldLabel}>Teslim Tarihi</Text>
           <TouchableOpacity style={styles.inputBtn} onPress={() => setOpenPicker(openPicker === 'deliveryDate' ? null : 'deliveryDate')}><Text style={styles.inputBtnText}>{deliveryDate.toLocaleDateString('tr-TR')}</Text></TouchableOpacity>
           <Text style={styles.fieldLabel}>Teslim Saati</Text>
-          <TouchableOpacity style={styles.inputBtn} onPress={() => setOpenPicker(openPicker === 'deliveryTime' ? null : 'deliveryTime')}><Text style={styles.inputBtnText}>{deliveryTime.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}</Text></TouchableOpacity>
-          {openPicker === 'deliveryDate' && <DateTimePicker value={deliveryDate} mode="date" display={Platform.OS === 'ios' ? 'inline' : 'default'} onChange={handleDeliveryDateChange} minimumDate={minDate} />}
-          {openPicker === 'deliveryTime' && <DateTimePicker value={deliveryTime} mode="time" display={Platform.OS === 'ios' ? 'inline' : 'default'} onChange={handleDeliveryTimeChange} />}
+          <TouchableOpacity style={styles.inputBtn} onPress={() => setIsDeliveryModalOpen(true)}>
+            <Text style={styles.inputBtnText}>{deliveryTime ? formatTime(deliveryTime) : 'Teslim saati seçin'}</Text>
+          </TouchableOpacity>
+          {openPicker === 'deliveryDate' && <DateTimePicker value={deliveryDate} mode="date" display={Platform.OS === 'ios' ? 'inline' : 'default'} onChange={handleDeliveryDateChange} minimumDate={pickupDate} />}
         </View>
       </View>
 
-      <View style={styles.section}><Text style={styles.sectionTitle}>✏️ Notlar</Text>
-        <TextInput style={styles.notesInput} placeholder="Özel istekler varsa yazın..." multiline numberOfLines={3} value={notes} onChangeText={setNotes} placeholderTextColor="#999" />
+      {/* Pickup time modal */}
+      <Modal visible={isPickupModalOpen} transparent animationType="slide">
+        <TouchableWithoutFeedback onPress={() => setIsPickupModalOpen(false)}>
+          <View style={styles.modalOverlay} />
+        </TouchableWithoutFeedback>
+        <View style={styles.modalContent}>
+          <Text style={styles.modalTitle}>Alış Saati Seçin</Text>
+          <ScrollView contentContainerStyle={{ padding: 12 }}>
+            {(() => {
+              const nowLocal = new Date();
+              const slots = buildPickupSlots(pickupDate, nowLocal);
+              const allDisabled = slots.every(s => s.disabled);
+              if (allDisabled) {
+                if (isSameDay(pickupDate, nowLocal) && getEarliestPickupDateTime(nowLocal) === null) {
+                  return <Text style={styles.smallHint}>Şu an çalışma saatleri dışında. En erken randevu yarın 08:00.</Text>;
+                }
+                return <Text style={styles.smallHint}>Uygun alış saati bulunamadı. Lütfen başka bir tarih seçin.</Text>;
+              }
+
+              return slots.map(sObj => {
+                const s = sObj.slot;
+                const disabled = sObj.disabled;
+                const selected = pickupTime && s.getTime() === pickupTime.getTime();
+                return (
+                  <TouchableOpacity
+                    key={s.toISOString()}
+                    style={[styles.slotButton, selected && styles.slotButtonSelected, disabled && styles.slotButtonDisabled]}
+                    onPress={() => { if (!disabled) { handleSelectPickupSlot(s); setIsPickupModalOpen(false); } }}
+                    disabled={disabled}
+                  >
+                    <Text style={[styles.slotText, selected && styles.slotTextSelected, disabled && styles.slotTextDisabled]}>{formatTime(s)}</Text>
+                  </TouchableOpacity>
+                );
+              });
+            })()}
+          </ScrollView>
+        </View>
+      </Modal>
+
+      {/* Delivery time modal */}
+      <Modal visible={isDeliveryModalOpen} transparent animationType="slide">
+        <TouchableWithoutFeedback onPress={() => setIsDeliveryModalOpen(false)}>
+          <View style={styles.modalOverlay} />
+        </TouchableWithoutFeedback>
+        <View style={styles.modalContent}>
+          <Text style={styles.modalTitle}>Teslim Saati Seçin</Text>
+          <ScrollView contentContainerStyle={{ padding: 12 }}>
+            {(() => {
+              if (!pickupTime) return <Text style={styles.smallHint}>Önce alış saatini seçin.</Text>;
+              const slots = buildDeliverySlots(deliveryDate, pickupTime);
+              const allDisabled = slots.every(s => s.disabled);
+              if (allDisabled) return <Text style={styles.smallHint}>Seçilen gün için uygun teslim saati yok. Lütfen başka bir gün seçin.</Text>;
+              return slots.map(sObj => {
+                const s = sObj.slot;
+                const disabled = sObj.disabled;
+                const selected = deliveryTime && s.getTime() === deliveryTime.getTime();
+                return (
+                  <TouchableOpacity
+                    key={s.toISOString()}
+                    style={[styles.slotButton, selected && styles.slotButtonSelected, disabled && styles.slotButtonDisabled]}
+                    onPress={() => { if (!disabled) { handleSelectDeliverySlot(s); setIsDeliveryModalOpen(false); } }}
+                    disabled={disabled}
+                  >
+                    <Text style={[styles.slotText, selected && styles.slotTextSelected, disabled && styles.slotTextDisabled]}>{formatTime(s)}</Text>
+                  </TouchableOpacity>
+                );
+              });
+            })()}
+          </ScrollView>
+        </View>
+      </Modal>
+
+      <View style={styles.section}><Text style={styles.sectionTitle}>Notlar</Text>
+        <TextInput style={styles.notesInput} placeholder="Sipariş notu" multiline numberOfLines={3} value={notes} onChangeText={setNotes} placeholderTextColor="#999" />
       </View>
 
-      <TouchableOpacity style={[styles.continueBtn, validationError && styles.continueBtnDisabled]} onPress={handleContinue} disabled={!!validationError}><Text style={styles.continueBtnText}>Devam</Text></TouchableOpacity>
+      <TouchableOpacity
+        style={[
+          styles.continueBtn,
+          (validationError || !selectedAddress || !pickupTime || !deliveryTime) && styles.continueBtnDisabled,
+        ]}
+        onPress={() => {
+          if (!validateTimes()) return;
+          if (!selectedAddress) { setValidationError('Lütfen bir teslimat adresi seçin.'); return; }
+          handleContinue();
+        }}
+        disabled={!!validationError || !selectedAddress || !pickupTime || !deliveryTime}
+      >
+        <Text style={styles.continueBtnText}>Devam</Text>
+      </TouchableOpacity>
 
     </ScrollView>
   );
@@ -142,6 +356,17 @@ const styles = StyleSheet.create({
   continueBtn: { backgroundColor: '#007AFF', marginHorizontal: 16, paddingVertical: 16, borderRadius: 14, alignItems: 'center', marginTop: 16 },
   continueBtnText: { color: '#fff', fontWeight: '800', fontSize: 16 },
   continueBtnDisabled: { backgroundColor: '#9BB7FF' },
+  slotsContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 },
+  slotButton: { paddingVertical: 8, paddingHorizontal: 12, backgroundColor: '#fff', borderRadius: 8, borderWidth: 1, borderColor: '#E6E9EE', marginRight: 8, marginBottom: 8 },
+  slotButtonSelected: { backgroundColor: '#007AFF', borderColor: '#007AFF' },
+  slotText: { color: '#0F172A', fontWeight: '700' },
+  slotTextSelected: { color: '#fff' },
+  smallHint: { color: '#475569', fontSize: 13, marginTop: 8 },
+  slotButtonDisabled: { backgroundColor: '#F1F5F9', borderColor: '#E6E9EE' },
+  slotTextDisabled: { color: '#94A3B8' },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)' },
+  modalContent: { position: 'absolute', left: 0, right: 0, bottom: 0, backgroundColor: '#fff', borderTopLeftRadius: 12, borderTopRightRadius: 12, maxHeight: '60%' },
+  modalTitle: { fontSize: 16, fontWeight: '800', padding: 12, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' },
 });
 
 export default OrderAddressAndTimeScreen;
