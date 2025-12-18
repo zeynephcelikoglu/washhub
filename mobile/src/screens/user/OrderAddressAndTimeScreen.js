@@ -7,6 +7,11 @@ import { AuthContext } from '../../context/AuthContext';
 const OrderAddressAndTimeScreen = ({ navigation, route }) => {
   const { selectedService, selectedProducts, originalTotalPrice, isRepeatOrder } = route.params || {};
 
+  // Log incoming selectedProducts for debugging data flow
+  React.useEffect(() => {
+    console.log('RECEIVED PRODUCTS AT ADDRESS SCREEN:', JSON.stringify(selectedProducts, null, 2));
+  }, [selectedProducts]);
+
   const [addresses, setAddresses] = useState([]);
   const [selectedAddress, setSelectedAddress] = useState(null);
 
@@ -194,6 +199,7 @@ const OrderAddressAndTimeScreen = ({ navigation, route }) => {
   const handleContinue = () => {
     if (!validateTimes()) return;
     if (!selectedAddress) { setValidationError('Lütfen bir teslimat adresi seçin.'); return; }
+    console.log('FORWARDING PRODUCTS TO SUMMARY:', JSON.stringify(selectedProducts, null, 2));
     navigation.navigate('OrderSummary', { selectedService, selectedProducts, address: selectedAddress, pickupDate: pickupDate.toISOString().split('T')[0], pickupTime: pickupTime.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }), deliveryDate: deliveryDate.toISOString().split('T')[0], deliveryTime: deliveryTime.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }), notes, originalTotalPrice, isRepeatOrder });
   };
 

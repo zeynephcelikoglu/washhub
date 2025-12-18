@@ -3,23 +3,29 @@ import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, ActivityIn
 import { orderApi } from '../../api/orderApi';
 import { addressApi } from '../../api/addressApi';
 import { AuthContext } from '../../context/AuthContext';
+import OrderItemsList from '../../components/OrderItemsList';
 
 const OrderSummaryScreen = ({ navigation, route }) => {
   const { user } = useContext(AuthContext);
   const { selectedService, selectedProducts = [], address, pickupDate, pickupTime, deliveryDate, deliveryTime, notes, readOnly, isRepeatOrder, originalTotalPrice } = route.params || {};
+  React.useEffect(() => {
+    console.log('RECEIVED PRODUCTS AT ORDER SUMMARY:', JSON.stringify(selectedProducts, null, 2));
+  }, [selectedProducts]);
   const [loading, setLoading] = useState(false);
   const [addressObj, setAddressObj] = useState(null);
   const [fetchingAddress, setFetchingAddress] = useState(false);
-  // Service labels for UI only
-  const SERVICE_LABELS = {
-    washing: 'Yıkama',
-    ironing: 'Ütüleme',
-    drying: 'Kurutma',
-    dry_cleaning: 'Kuru Temizleme',
-  };
-  const getServiceLabel = (serviceType) => {
-    if (!serviceType) return 'Diğer';
-    return SERVICE_LABELS[serviceType] || 'Diğer';
+
+  const mapServiceTypeToEnum = (serviceTypeValue) => {
+    const mapping = {
+      washing: 'standard',
+      ironing: 'express',
+      drying: 'express',
+      dry_cleaning: 'dry_clean',
+      dry_clean: 'dry_clean',
+      standard: 'standard',
+      express: 'express'
+    };
+    return mapping[serviceTypeValue] || 'standard';
   };
 
   // Normalize selectedProducts to a flat shape used by UI and payload
@@ -38,6 +44,7 @@ const OrderSummaryScreen = ({ navigation, route }) => {
           price: Number(prod.price || prod.basePrice || item.price || 0),
           quantity: Number(item.quantity || item.qty || 0),
           serviceType: item.serviceType || prod.serviceType || prod.type || null,
+          originalServiceType: item.originalServiceType || prod.serviceType || null,
         };
       }
 
@@ -50,6 +57,7 @@ const OrderSummaryScreen = ({ navigation, route }) => {
         price: Number(item.price || item.basePrice || 0),
         quantity: Number(item.quantity || item.qty || 0),
         serviceType: item.serviceType || item.type || null,
+        originalServiceType: item.originalServiceType || item.type || null,
       };
     }).filter(p => p !== null);
   };
@@ -103,16 +111,37 @@ const OrderSummaryScreen = ({ navigation, route }) => {
   const pickupDateTimeISO = buildDateTimeISO(pickupDate, pickupTime);
   const deliveryDateTimeISO = buildDateTimeISO(deliveryDate, deliveryTime);
 
+  const validateOrderItems = (items = []) => {
+    if (!Array.isArray(items) || items.length === 0) throw new Error('No products selected');
+    for (const product of items) {
+      if (!product.name || product.name === 'Unknown Product') throw new Error(`Product missing name: ${JSON.stringify(product)}`);
+      if (product.price === undefined || product.price === null || Number(product.price) <= 0) throw new Error(`Product missing valid price: ${JSON.stringify(product)}`);
+      if (!product.quantity || Number(product.quantity) < 1) throw new Error(`Product missing valid quantity: ${JSON.stringify(product)}`);
+    }
+    return true;
+  };
+
   const handleConfirm = async () => {
     if (readOnly) return;
     // Build and validate payload exactly as backend expects
     
-    // Ensure items include only product and quantity, taken only from selectedProducts (single source of truth)
-    const items = (finalItems || [])
-      .map(p => ({ product: String(p.productId || p.id), quantity: Number(p.quantity) }));
+    // Ensure items include full snapshots (product/productId, name, price, quantity, serviceType)
+    const items = (finalItems || []).map(p => {
+      const id = String(p.productId || p.id || '');
+      return {
+        // keep legacy `product` field for backend compatibility and provide explicit `productId`
+        product: id,
+        productId: id,
+        name: p.name || 'Ürün',
+        price: Number(p.price || 0),
+        quantity: Number(p.quantity || 0),
+        serviceType: mapServiceTypeToEnum(p.serviceType || selectedService || 'standard'),
+        originalServiceType: p.originalServiceType || p.serviceType || selectedService || null,
+      };
+    });
 
     // Filter out invalid entries just in case
-    const filteredItems = items.filter(i => i.product && Number(i.quantity) > 0);
+    const filteredItems = items.filter(i => (i.product || i.productId) && Number(i.quantity) > 0);
 
     const addrId = (typeof address === 'string') ? address : (addressObj?._id || address?.id || address?._id);
 
@@ -132,14 +161,22 @@ const OrderSummaryScreen = ({ navigation, route }) => {
     // Debug items and payload prior to sending
     console.log('FINAL ITEMS', filteredItems);
     console.log('ORDER PAYLOAD', payload);
+    console.log('═══════════════════════════════════════');
+    console.log('🟢 ORDER SUMMARY - Creating Order');
+    console.log('Payload items:', JSON.stringify(payload.items, null, 2));
+    console.log('Total Price:', payload.totalPrice);
+    console.log('═══════════════════════════════════════');
 
     // Basic validation to avoid 400 from backend
     // For repeat orders: skip service type and products validation (already from original order)
     // For normal orders: validate all fields
     
-    // Block submit if no valid items
-    if (!Array.isArray(filteredItems) || filteredItems.length === 0) {
-      Alert.alert('Hata', 'Seçilen sepette ürün bulunamadı');
+    // Validate snapshot presence before submitting
+    try {
+      validateOrderItems(filteredItems);
+    } catch (err) {
+      console.error('ORDER VALIDATION FAILED:', err.message);
+      Alert.alert('Hata', 'Sipariş oluşturulamaz: ' + err.message);
       return;
     }
 
@@ -176,44 +213,7 @@ const OrderSummaryScreen = ({ navigation, route }) => {
 
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Ürünler</Text>
-          {finalItems.length === 0 ? (
-            <Text style={styles.muted}>Seçilen ürün yok</Text>
-          ) : (
-            (() => {
-              const grouped = (function groupProductsByService(products) {
-                const groups = {};
-                products.forEach((p) => {
-                  const key = p.serviceType || 'other';
-                  if (!groups[key]) groups[key] = [];
-                  groups[key].push(p);
-                });
-                return groups;
-              })(finalItems);
-
-              return Object.entries(grouped).map(([serviceType, items]) => (
-                <View key={serviceType} style={styles.serviceGroup}>
-                  <Text style={styles.serviceGroupTitle}>{getServiceLabel(serviceType)}</Text>
-                  {items.map(item => (
-                    <View key={item.productId || item.id} style={styles.productRow}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.productName}>{item.name || 'Ürün'}</Text>
-                        <Text style={styles.productQty}>Adet: {item.quantity}</Text>
-                      </View>
-                      <View style={{ alignItems: 'flex-end' }}>
-                        <Text style={styles.productPrice}>{(Number(item.price) || 0).toFixed(2)}₺</Text>
-                        <Text style={styles.productSubtotal}>{((Number(item.price) || 0) * (Number(item.quantity) || 0)).toFixed(2)}₺</Text>
-                      </View>
-                    </View>
-                  ))}
-                </View>
-              ));
-            })()
-          )}
-
-          <View style={styles.totalRow}>
-            <Text style={styles.totalLabel}>Toplam</Text>
-            <Text style={[styles.totalValue, { fontWeight: '900' }]}>{total.toFixed(2)}₺</Text>
-          </View>
+          <OrderItemsList items={finalItems} totalPrice={total} />
         </View>
 
         <View style={styles.card}>
@@ -261,16 +261,6 @@ const styles = StyleSheet.create({
   cardTitle: { fontSize: 14, fontWeight: '800', color: '#0F172A', marginBottom: 8 },
   cardValue: { fontSize: 15, fontWeight: '700', color: '#0F172A' },
   muted: { color: '#64748B' },
-  productRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' },
-  productName: { fontWeight: '700', color: '#0F172A' },
-  productQty: { color: '#64748B', marginTop: 4 },
-  productPrice: { fontWeight: '700', color: '#0F172A' },
-  productSubtotal: { color: '#0F172A', marginTop: 4, fontWeight: '700' },
-  totalRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 12, borderTopWidth: 1, borderTopColor: '#F1F5F9', paddingTop: 12 },
-  totalLabel: { fontWeight: '800', color: '#0F172A' },
-  totalValue: { fontWeight: '800', color: '#0F172A' },
-  serviceGroup: { marginBottom: 12 },
-  serviceGroupTitle: { fontWeight: '600', marginBottom: 6, fontSize: 14, color: '#0F172A' },
   addressTitle: { fontWeight: '700', fontSize: 15, color: '#0F172A' },
   addressLine: { color: '#475569', marginTop: 6 },
   addressDetail: { color: '#64748B', marginTop: 6 },

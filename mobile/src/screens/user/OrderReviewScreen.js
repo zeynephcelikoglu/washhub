@@ -19,6 +19,20 @@ const OrderReviewScreen = ({ route, navigation }) => {
   const [loading, setLoading] = useState(false);
   const [addressDetails, setAddressDetails] = useState(null);
 
+  const getServiceTypeLabel = (originalServiceType, fallbackEnum) => {
+    const labels = {
+      washing: 'Yıkama',
+      ironing: 'Ütü',
+      drying: 'Kurutma',
+      dry_cleaning: 'Kuru Temizleme',
+      dry_clean: 'Kuru Temizleme',
+      standard: 'Standart',
+      express: 'Ekspres',
+    };
+    const key = originalServiceType || fallbackEnum;
+    return labels[key] || key || '—';
+  };
+
   React.useEffect(() => {
     if (orderData?.addressId && user?.id) {
       const fetchAddressDetails = async () => {
@@ -83,6 +97,7 @@ const OrderReviewScreen = ({ route, navigation }) => {
     <View style={styles.itemRow}>
       <View style={{ flex: 1 }}>
         <Text style={styles.itemName}>{item.name}</Text>
+        <Text style={styles.itemQty}>Hizmet: {getServiceTypeLabel(item.originalServiceType, item.serviceType)}</Text>
         <Text style={styles.itemQty}>Adet: {item.quantity}</Text>
       </View>
       <Text style={styles.itemPrice}>{(item.price * item.quantity).toFixed(2)} ₺</Text>

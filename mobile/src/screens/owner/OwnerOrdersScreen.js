@@ -20,6 +20,7 @@ const OwnerOrdersScreen = ({ navigation, route }) => {
   const { user } = useContext(AuthContext);
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState('active');
 
   // Handle updated order coming from detail/approve screens to update lists without full refetch
   useEffect(() => {
@@ -186,6 +187,9 @@ const OwnerOrdersScreen = ({ navigation, route }) => {
 
   const activeOrders = orders.filter(o => activeStatuses.includes(o.status) && !o.hiddenForOwner);
   const historyOrders = orders.filter(o => historyStatuses.includes(o.status) && !o.hiddenForOwner);
+  
+  const displayedOrders = activeTab === 'active' ? activeOrders : historyOrders;
+  const displayedRenderItem = activeTab === 'active' ? renderOrderItem : renderHistoryItem;
 
   return (
     <View style={styles.container}>
@@ -195,41 +199,41 @@ const OwnerOrdersScreen = ({ navigation, route }) => {
         </View>
       ) : (
         <View style={{ flex: 1 }}>
-          {/* Active Section */}
-          <View style={{ paddingHorizontal: 15, paddingTop: 12 }}>
-            <Text style={{ fontSize: 16, fontWeight: '800', marginBottom: 8 }}>Aktif Siparişler</Text>
+          {/* Tab Toggle */}
+          <View style={styles.tabContainer}>
+            <TouchableOpacity
+              style={[styles.tabButton, activeTab === 'active' && styles.tabButtonActive]}
+              onPress={() => setActiveTab('active')}
+            >
+              <Text style={[styles.tabText, activeTab === 'active' && styles.tabTextActive]}>
+                Aktif Siparişler
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.tabButton, activeTab === 'history' && styles.tabButtonActive]}
+              onPress={() => setActiveTab('history')}
+            >
+              <Text style={[styles.tabText, activeTab === 'history' && styles.tabTextActive]}>
+                Geçmiş Siparişler
+              </Text>
+            </TouchableOpacity>
           </View>
-          {activeOrders.length > 0 ? (
+
+          {/* Orders List */}
+          {displayedOrders.length > 0 ? (
             <FlatList
-              data={activeOrders}
+              data={displayedOrders}
               keyExtractor={(item) => item._id}
-              renderItem={renderOrderItem}
+              renderItem={displayedRenderItem}
               contentContainerStyle={styles.listContent}
               onRefresh={fetchOrders}
               refreshing={loading}
             />
           ) : (
             <View style={styles.centerContainer}>
-              <Text style={styles.emptyText}>Aktif sipariş yok</Text>
-            </View>
-          )}
-
-          {/* History Section */}
-          <View style={{ paddingHorizontal: 15, paddingTop: 12 }}>
-            <Text style={{ fontSize: 16, fontWeight: '800', marginBottom: 8 }}>Geçmiş Siparişler</Text>
-          </View>
-          {historyOrders.length > 0 ? (
-            <FlatList
-              data={historyOrders}
-              keyExtractor={(item) => item._id}
-              renderItem={renderHistoryItem}
-              contentContainerStyle={styles.listContent}
-              onRefresh={fetchOrders}
-              refreshing={loading}
-            />
-          ) : (
-            <View style={{ paddingHorizontal: 15, paddingBottom: 40 }}>
-              <Text style={{ color: '#999' }}>Geçmişte tamamlanmış veya iptal edilmiş sipariş yok</Text>
+              <Text style={styles.emptyText}>
+                {activeTab === 'active' ? 'Aktif sipariş yok' : 'Geçmiş sipariş yok'}
+              </Text>
             </View>
           )}
         </View>
@@ -242,6 +246,33 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F5F5F5',
+  },
+  tabContainer: {
+    flexDirection: 'row',
+    paddingHorizontal: 15,
+    paddingTop: 12,
+    paddingBottom: 12,
+    backgroundColor: '#fff',
+  },
+  tabButton: {
+    flex: 1,
+    paddingVertical: 10,
+    marginHorizontal: 5,
+    alignItems: 'center',
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
+  },
+  tabButtonActive: {
+    borderBottomColor: '#FF9500',
+  },
+  tabText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#999',
+  },
+  tabTextActive: {
+    fontWeight: 'bold',
+    color: '#FF9500',
   },
   centerContainer: {
     flex: 1,

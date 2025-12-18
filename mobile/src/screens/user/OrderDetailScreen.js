@@ -1,5 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native';
+import { normalizeOrderItems } from '../../utils/normalizeOrderItems';
+import OrderItemsList from '../../components/OrderItemsList';
 import { useNavigation } from '@react-navigation/native';
 
 const OrderDetailScreen = ({ route }) => {
@@ -37,51 +39,36 @@ const OrderDetailScreen = ({ route }) => {
 
   const handleRepeatOrder = async () => {
     try {
-      const firstItem = order.items && order.items.length > 0 ? order.items[0] : null;
-      const serviceType = firstItem?.serviceType || 'washing';
+      const normalized = normalizeOrderItems(order?.items || []);
+      // Block repeat if snapshot data missing
+      if (!normalized || normalized.length === 0) {
+        Alert.alert('Tekrar Sipariş Hatası', 'Bu siparişte ürün bilgisi eksik olduğu için tekrar oluşturulamaz.');
+        return;
+      }
+      if (normalized.length !== (order?.items?.length || 0)) {
+        Alert.alert('Tekrar Sipariş Hatası', 'Bazı ürünler eksik bilgi içeriyor; tekrar sipariş oluşturulamıyor.');
+        return;
+      }
 
-      const selectedProducts = (order.items || []).map(i => {
-        if (!i) return null;
-        if (i.product && typeof i.product === 'object') {
-          const prod = i.product;
-          return { 
-            product: prod, 
-            productId: prod._id || prod.id, 
-            quantity: i.quantity,
-            name: prod.name || prod.title,
-            price: prod.price || prod.basePrice || 0,
-            serviceType: i.serviceType || serviceType
-          };
-        }
-        if (i.productId) {
-          return { 
-            productId: i.productId, 
-            name: i.name || '', 
-            price: i.price || 0, 
-            quantity: i.quantity,
-            serviceType: i.serviceType || serviceType
-          };
-        }
-        if (i.product && typeof i.product === 'string') {
-          return { 
-            productId: i.product, 
-            name: i.name || '', 
-            price: i.price || 0, 
-            quantity: i.quantity,
-            serviceType: i.serviceType || serviceType
-          };
-        }
-        return null;
-      }).filter(p => p !== null);
+      const serviceType = normalized.length > 0 ? normalized[0].serviceType : 'washing';
 
-      navigation.navigate('HomeTab', { 
-        screen: 'OrderAddressAndTime', 
-        params: { 
-          selectedService: serviceType, 
-          selectedProducts, 
-          originalTotalPrice: order.totalPrice, 
-          isRepeatOrder: true 
-        } 
+      const selectedProducts = normalized.map(i => ({
+        productId: i.productId || i.id,
+        name: i.name,
+        price: i.price,
+        quantity: i.quantity,
+        serviceType: i.serviceType || serviceType,
+        originalServiceType: i.originalServiceType || i.serviceType || serviceType,
+      }));
+
+      navigation.navigate('HomeTab', {
+        screen: 'OrderAddressAndTime',
+        params: {
+          selectedService: serviceType,
+          selectedProducts,
+          originalTotalPrice: order.totalPrice,
+          isRepeatOrder: true,
+        },
       });
     } catch (err) {
       console.log('Repeat order error', err);
@@ -102,17 +89,7 @@ const OrderDetailScreen = ({ route }) => {
       {/* Products */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Ürünler</Text>
-        {order.items && order.items.length > 0 ? (
-          order.items.map((item, idx) => (
-            <View key={idx} style={styles.itemRow}>
-              <Text style={styles.itemName}>{item.name || 'Ürün'}</Text>
-              <Text style={styles.itemQty}>x{item.quantity}</Text>
-              <Text style={styles.itemPrice}>{(item.price * item.quantity).toFixed(2)} ₺</Text>
-            </View>
-          ))
-        ) : (
-          <Text>Ürün bulunamadı</Text>
-        )}
+        <OrderItemsList items={order?.items || []} totalPrice={order?.totalPrice} />
       </View>
 
       {/* Address */}
@@ -149,11 +126,7 @@ const OrderDetailScreen = ({ route }) => {
         </View>
       )}
 
-      {/* Total Price */}
-      <View style={styles.totalSection}>
-        <Text style={styles.totalLabel}>Toplam</Text>
-        <Text style={styles.totalPrice}>{order.totalPrice} ₺</Text>
-      </View>
+      {/* Total shown inside OrderItemsList; duplicate removed */}
 
       {/* Rating if delivered */}
       {order.rating && (
@@ -205,20 +178,7 @@ const styles = StyleSheet.create({
   itemPrice: { fontSize: 13, fontWeight: '600', color: '#007AFF' },
   addressText: { fontSize: 13, color: '#0F172A', lineHeight: 20 },
   detailText: { fontSize: 13, color: '#0F172A' },
-  totalSection: {
-    backgroundColor: '#fff',
-    marginHorizontal: 12,
-    marginVertical: 8,
-    borderRadius: 12,
-    padding: 16,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    borderTopWidth: 1,
-    borderTopColor: '#EEF2FF',
-  },
-  totalLabel: { fontSize: 16, fontWeight: '700', color: '#0F172A' },
-  totalPrice: { fontSize: 18, fontWeight: '800', color: '#007AFF' },
+  // total is displayed by OrderItemsList component
   ratingText: { fontSize: 14, color: '#FF9500', fontWeight: '600' },
   repeatButton: {
     backgroundColor: '#007AFF',
