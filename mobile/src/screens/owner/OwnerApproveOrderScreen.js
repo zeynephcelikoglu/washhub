@@ -10,6 +10,8 @@ import {
 } from 'react-native';
 import { orderApi } from '../../api/orderApi';
 import { isCourierAssigned } from '../../utils/orderHelpers';
+import { normalizeOrderItems } from '../../utils/normalizeOrderItems';
+import OrderItemsList from '../../components/OrderItemsList';
 
 const OwnerApproveOrderScreen = ({ route, navigation }) => {
   const { order } = route.params;
@@ -81,16 +83,18 @@ const OwnerApproveOrderScreen = ({ route, navigation }) => {
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Hizmetler</Text>
-        {order.items?.map((item, idx) => (
-          <View key={idx} style={styles.itemRow}>
-            <Text style={styles.itemName}>{item.name}</Text>
-            <Text style={styles.itemPrice}>{item.price} ₺</Text>
-          </View>
-        ))}
-        <View style={styles.totalRow}>
-          <Text style={styles.totalLabel}>Toplam:</Text>
-          <Text style={styles.totalPrice}>{order.totalPrice} ₺</Text>
-        </View>
+        {(() => {
+          const normalized = normalizeOrderItems(order?.items || []);
+          if (normalized.length === 0 && (order?.items?.length || 0) > 0) {
+            return (
+              <View style={{ padding: 12 }}>
+                <Text style={{ color: '#B91C1C', fontWeight: '700' }}>Ürün verisi eksik: Bu sipariş ürün bilgisi içermiyor.</Text>
+                <Text style={{ color: '#475569', marginTop: 6 }}>Toplam: {order.totalPrice} ₺</Text>
+              </View>
+            );
+          }
+          return <OrderItemsList items={order?.items || []} totalPrice={order?.totalPrice} />;
+        })()}
       </View>
 
       <View style={styles.section}>
@@ -165,6 +169,14 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
+  serviceGroup: { marginBottom: 12 },
+  serviceHeader: { borderBottomWidth: 2, borderBottomColor: '#007AFF', paddingBottom: 8, marginBottom: 12 },
+  serviceHeaderText: { fontSize: 16, fontWeight: '700', color: '#007AFF', letterSpacing: 1 },
+  productItem: { paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#F1F5F9', flexDirection: 'row', justifyContent: 'space-between' },
+  productName: { fontSize: 15, fontWeight: '600', color: '#333', marginBottom: 4 },
+  productDetails: { fontSize: 14, color: '#666' },
+  serviceSubtotal: { marginTop: 12, paddingTop: 8, borderTopWidth: 1, borderTopColor: '#E6E9EE', alignItems: 'flex-end' },
+  subtotalText: { fontSize: 14, fontWeight: '600', color: '#333' },
   orderId: {
     fontSize: 18,
     fontWeight: 'bold',

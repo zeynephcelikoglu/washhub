@@ -21,6 +21,7 @@ const CourierOrdersScreen = ({ navigation, route }) => {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(false);
   const [rejectedIds, setRejectedIds] = useState([]);
+  const [activeTab, setActiveTab] = useState('active');
 
   // handle updatedOrder coming back from detail screen
   useEffect(() => {
@@ -153,6 +154,13 @@ const CourierOrdersScreen = ({ navigation, route }) => {
     return card;
   };
 
+  // Split into active (available/accepted) and history (delivered/cancelled/completed assigned to me)
+  const activeStatuses = ['courier_assigned', 'courier_accepted', 'courier_assigned_waiting'];
+  const activeOrders = orders.filter(o => activeStatuses.includes(o.status) && !o.hiddenForCourier);
+  const historyOrders = orders.filter(o => ['delivered', 'cancelled', 'completed'].includes(o.status) && !o.hiddenForCourier);
+  
+  const displayedOrders = activeTab === 'active' ? activeOrders : historyOrders;
+
   return (
     <View style={styles.container}>
       {loading ? (
@@ -160,60 +168,45 @@ const CourierOrdersScreen = ({ navigation, route }) => {
           <ActivityIndicator size="large" color="#34C759" />
         </View>
       ) : (
-        (() => {
-          // Split into active (available/accepted) and history (delivered/cancelled/completed assigned to me)
-          const activeStatuses = ['courier_assigned', 'courier_accepted', 'courier_assigned_waiting'];
-          const activeOrders = orders.filter(o => activeStatuses.includes(o.status) && !o.hiddenForCourier);
-          const historyOrders = orders.filter(o => ['delivered', 'cancelled', 'completed'].includes(o.status) && !o.hiddenForCourier);
+        <View style={{ flex: 1 }}>
+          {/* Tab Toggle */}
+          <View style={styles.tabContainer}>
+            <TouchableOpacity
+              style={[styles.tabButton, activeTab === 'active' && styles.tabButtonActive]}
+              onPress={() => setActiveTab('active')}
+            >
+              <Text style={[styles.tabText, activeTab === 'active' && styles.tabTextActive]}>
+                Aktif Siparişler
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.tabButton, activeTab === 'history' && styles.tabButtonActive]}
+              onPress={() => setActiveTab('history')}
+            >
+              <Text style={[styles.tabText, activeTab === 'history' && styles.tabTextActive]}>
+                Geçmiş Siparişler
+              </Text>
+            </TouchableOpacity>
+          </View>
 
-          if (activeOrders.length === 0 && historyOrders.length === 0) {
-            return (
-              <View style={styles.centerContainer}>
-                <Text style={styles.emptyText}>Atanmış sipariş yok</Text>
-              </View>
-            );
-          }
-
-          return (
-            <View style={{ flex: 1 }}>
-              <View style={{ paddingHorizontal: 15, paddingTop: 12 }}>
-                <Text style={{ fontSize: 16, fontWeight: '800', marginBottom: 8 }}>Aktif Siparişler</Text>
-              </View>
-              {activeOrders.length > 0 ? (
-                <FlatList
-                  data={activeOrders}
-                  keyExtractor={(item) => item._id}
-                  renderItem={renderOrderItem}
-                  contentContainerStyle={styles.listContent}
-                  onRefresh={fetchOrders}
-                  refreshing={loading}
-                />
-              ) : (
-                <View style={{ paddingHorizontal: 15 }}>
-                  <Text style={{ color: '#999' }}>Aktif sipariş yok</Text>
-                </View>
-              )}
-
-              <View style={{ paddingHorizontal: 15, paddingTop: 12 }}>
-                <Text style={{ fontSize: 16, fontWeight: '800', marginBottom: 8 }}>Geçmiş Siparişler</Text>
-              </View>
-              {historyOrders.length > 0 ? (
-                <FlatList
-                  data={historyOrders}
-                  keyExtractor={(item) => item._id}
-                  renderItem={renderOrderItem}
-                  contentContainerStyle={styles.listContent}
-                  onRefresh={fetchOrders}
-                  refreshing={loading}
-                />
-              ) : (
-                <View style={{ paddingHorizontal: 15, paddingBottom: 40 }}>
-                  <Text style={{ color: '#999' }}>Geçmiş sipariş yok</Text>
-                </View>
-              )}
+          {/* Orders List */}
+          {displayedOrders.length > 0 ? (
+            <FlatList
+              data={displayedOrders}
+              keyExtractor={(item) => item._id}
+              renderItem={renderOrderItem}
+              contentContainerStyle={styles.listContent}
+              onRefresh={fetchOrders}
+              refreshing={loading}
+            />
+          ) : (
+            <View style={styles.centerContainer}>
+              <Text style={styles.emptyText}>
+                {activeTab === 'active' ? 'Aktif sipariş yok' : 'Geçmiş sipariş yok'}
+              </Text>
             </View>
-          );
-        })()
+          )}
+        </View>
       )}
     </View>
   );
@@ -223,6 +216,33 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F5F5F5',
+  },
+  tabContainer: {
+    flexDirection: 'row',
+    paddingHorizontal: 15,
+    paddingTop: 12,
+    paddingBottom: 12,
+    backgroundColor: '#fff',
+  },
+  tabButton: {
+    flex: 1,
+    paddingVertical: 10,
+    marginHorizontal: 5,
+    alignItems: 'center',
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
+  },
+  tabButtonActive: {
+    borderBottomColor: '#34C759',
+  },
+  tabText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#999',
+  },
+  tabTextActive: {
+    fontWeight: 'bold',
+    color: '#34C759',
   },
   centerContainer: {
     flex: 1,

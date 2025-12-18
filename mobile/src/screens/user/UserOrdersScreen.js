@@ -16,6 +16,7 @@ import { AuthContext } from '../../context/AuthContext';
 import { orderApi } from '../../api/orderApi';
 import SwipeableOrderCard from '../../components/SwipeableOrderCard';
 import { useNavigation } from '@react-navigation/native';
+import { normalizeOrderItems } from '../../utils/normalizeOrderItems';
 
 const WORK_START = 8;
 const WORK_END = 19;
@@ -53,13 +54,36 @@ const UserOrdersScreen = () => {
 
   const handleDeleteOrder = async (orderId) => {
     try {
-      await orderApi.deleteOrder(orderId);
-      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-      setOrders((prev) => prev.filter((o) => o._id !== orderId));
-      Alert.alert('Başarılı', 'Sipariş silindi');
+      const response = await orderApi.deleteOrder(orderId);
+      // axios returns data in response.data
+      if (response && response.data && response.data.success) {
+        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+        setOrders((prev) => prev.filter((o) => o._id !== orderId));
+        Alert.alert('Başarılı', 'Sipariş silindi');
+      } else {
+        const msg = (response && response.data && response.data.message) || 'Sipariş silinemedi';
+        Alert.alert('Hata', msg);
+      }
     } catch (error) {
-      Alert.alert('Hata', 'Sipariş silinirken bir hata oluştu');
+      console.error('Delete order error:', error?.response?.data || error.message || error);
+      const msg = error?.response?.data?.message || 'Sipariş silinirken bir hata oluştu';
+      Alert.alert('Hata', msg);
     }
+  };
+
+  const confirmDelete = (orderId) => {
+    Alert.alert(
+      'Siparişi Sil',
+      'Bu siparişi silmek istediğinizden emin misiniz?',
+      [
+        { text: 'İptal', style: 'cancel' },
+        {
+          text: 'Sil',
+          style: 'destructive',
+          onPress: () => handleDeleteOrder(orderId)
+        }
+      ]
+    );
   };
 
   const normalizeTime = (date) => {
@@ -74,51 +98,38 @@ const UserOrdersScreen = () => {
 
   const handleRepeatOrder = async (order) => {
     try {
-      const firstItem = order.items && order.items.length > 0 ? order.items[0] : null;
-      const serviceType = firstItem?.serviceType || 'washing';
+      const normalized = normalizeOrderItems(order?.items || []);
+      // Block repeat if snapshot data missing
+      if (!normalized || normalized.length === 0) {
+        Alert.alert('Tekrar Sipariş Hatası', 'Bu siparişte ürün bilgisi eksik olduğu için tekrar oluşturulamaz.');
+        return;
+      }
+      if (normalized.length !== (order?.items?.length || 0)) {
+        Alert.alert('Tekrar Sipariş Hatası', 'Bazı ürünler eksik bilgi içeriyor; tekrar sipariş oluşturulamıyor.');
+        return;
+      }
 
-      const selectedProducts = (order.items || []).map(i => {
-        if (!i) return null;
-        if (i.product && typeof i.product === 'object') {
-          const prod = i.product;
-          return { 
-            product: prod, 
-            productId: prod._id || prod.id, 
-            quantity: i.quantity,
-            name: prod.name || prod.title,
-            price: prod.price || prod.basePrice || 0,
-            serviceType: i.serviceType || serviceType
-          };
-        }
-        if (i.productId) {
-          return { 
-            productId: i.productId, 
-            name: i.name || '', 
-            price: i.price || 0, 
-            quantity: i.quantity,
-            serviceType: i.serviceType || serviceType
-          };
-        }
-        if (i.product && typeof i.product === 'string') {
-          return { 
-            productId: i.product, 
-            name: i.name || '', 
-            price: i.price || 0, 
-            quantity: i.quantity,
-            serviceType: i.serviceType || serviceType
-          };
-        }
-        return null;
-      }).filter(p => p !== null);
+      const serviceType = normalized.length > 0 ? normalized[0].serviceType : 'washing';
 
-      navigation.navigate('HomeTab', { 
-        screen: 'OrderAddressAndTime', 
-        params: { 
-          selectedService: serviceType, 
-          selectedProducts, 
-          originalTotalPrice: order.totalPrice, 
-          isRepeatOrder: true 
-        } 
+      const selectedProducts = normalized.map(i => ({
+        productId: i.productId || i.id,
+        name: i.name,
+        price: i.price,
+        quantity: i.quantity,
+        serviceType: i.serviceType || serviceType,
+        originalServiceType: i.originalServiceType || i.serviceType || serviceType,
+      }));
+
+      console.log('REPEAT ORDER - SELECTED PRODUCTS:', JSON.stringify(selectedProducts, null, 2));
+
+      navigation.navigate('HomeTab', {
+        screen: 'OrderAddressAndTime',
+        params: {
+          selectedService: serviceType,
+          selectedProducts,
+          originalTotalPrice: order.totalPrice,
+          isRepeatOrder: true,
+        }
       });
     } catch (err) {
       console.log('Repeat order error', err);
@@ -201,7 +212,7 @@ const UserOrdersScreen = () => {
     );
 
     return isCompleted ? (
-      <SwipeableOrderCard orderId={item._id} onDelete={handleDeleteOrder}>
+      <SwipeableOrderCard orderId={item._id} onDelete={(id) => confirmDelete(id)}>
         {wrapped}
       </SwipeableOrderCard>
     ) : (
