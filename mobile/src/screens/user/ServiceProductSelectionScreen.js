@@ -10,11 +10,13 @@ const SERVICES = [
   { key: 'dry_cleaning', title: 'Kuru Temizleme', icon: 'hanger' },
 ];
 
-const ServiceProductSelectionScreen = ({ navigation }) => {
-  const [selectedService, setSelectedService] = useState('washing');
+const ServiceProductSelectionScreen = ({ navigation, route }) => {
+  const { preSelectedService } = route?.params || {};
+  const [selectedService, setSelectedService] = useState(preSelectedService || 'washing');
   const [products, setProducts] = useState([]);
   const [productsCache, setProductsCache] = useState({});
   const [quantities, setQuantities] = useState({});
+  const [selectedProductsMap, setSelectedProductsMap] = useState({});
   const [loading, setLoading] = useState(false);
 
   // Fetch products whenever selectedService changes
@@ -26,6 +28,13 @@ const ServiceProductSelectionScreen = ({ navigation }) => {
       // do NOT clear quantities when switching away — keep selections global
     }
   }, [selectedService]);
+
+  // Auto-scroll to preSelectedService tab if it's passed
+  useEffect(() => {
+    if (preSelectedService && preSelectedService !== selectedService) {
+      setSelectedService(preSelectedService);
+    }
+  }, [preSelectedService]);
 
   const fetchProductsByService = async (serviceType) => {
     setLoading(true);
@@ -52,32 +61,97 @@ const ServiceProductSelectionScreen = ({ navigation }) => {
     setLoading(false);
   };
 
-  const inc = (id) => setQuantities(q => ({ ...q, [id]: (q[id] || 0) + 1 }));
-  const dec = (id) => setQuantities(q => ({ ...q, [id]: Math.max(0, (q[id] || 0) - 1) }));
+  // Map frontend service types to backend enum values
+  const mapServiceTypeToEnum = (serviceType) => {
+    const mapping = {
+      washing: 'standard',
+      ironing: 'express',
+      drying: 'express',
+      dry_cleaning: 'dry_clean',
+      dry_clean: 'dry_clean',
+      standard: 'standard',
+      express: 'express'
+    };
+    return mapping[serviceType] || 'standard';
+  };
 
-  const selectedCount = Object.values(quantities).reduce((s, v) => s + (v || 0), 0);
+  const inc = (id) => {
+    // Ensure we capture a full snapshot at selection time
+    setSelectedProductsMap(prev => {
+      const existing = prev[id];
+      if (existing) {
+        return { ...prev, [id]: { ...existing, quantity: existing.quantity + 1 } };
+      }
+      const p = productsCache[id] || products.find(x => x._id === id) || {};
+      console.log('ORIGINAL PRODUCT serviceType:', p.serviceType);
+      if (!p || (!p.name && !p.title) || (p.price === undefined || p.price === null)) {
+        console.error('FATAL: Product missing snapshot at selection', p);
+        Alert.alert('Hata', 'Ürün verisi eksik olduğu için seçilemedi');
+        return prev;
+      }
+      const snapshot = {
+        productId: id,
+        name: p.name || p.title,
+        price: Number(p.price || p.basePrice || 0),
+        quantity: 1,
+        serviceType: mapServiceTypeToEnum(p.serviceType || selectedService || 'standard'),
+        originalServiceType: p.serviceType || selectedService || null,
+      };
+      console.log('PRODUCT SELECTED WITH SNAPSHOT:', JSON.stringify(snapshot, null, 2));
+      return { ...prev, [id]: snapshot };
+    });
+    // Also keep quantities for backward compatibility where needed
+    setQuantities(q => ({ ...q, [id]: (q[id] || 0) + 1 }));
+  };
+
+  const dec = (id) => {
+    setSelectedProductsMap(prev => {
+      const existing = prev[id];
+      if (!existing) return prev;
+      const nextQty = Math.max(0, (existing.quantity || 0) - 1);
+      if (nextQty === 0) {
+        const copy = { ...prev };
+        delete copy[id];
+        return copy;
+      }
+      return { ...prev, [id]: { ...existing, quantity: nextQty } };
+    });
+    setQuantities(q => ({ ...q, [id]: Math.max(0, (q[id] || 0) - 1) }));
+  };
+
+  const selectedCount = Object.values(selectedProductsMap).reduce((s, item) => s + (item.quantity || 0), 0);
 
   const handleContinue = () => {
     if (!selectedService) {
       Alert.alert('Hata', 'Lütfen bir hizmet seçin');
       return;
     }
-    // Collect selected products across all services (persisted in quantities)
-    const selectedProducts = Object.keys(quantities)
-      .filter(id => (quantities[id] || 0) > 0)
-      .map(id => {
-        const p = productsCache[id] || products.find(x => x._id === id) || {};
-        return {
-          productId: id,
-          name: p.name || p.title || '',
-          price: Number(p.price || p.basePrice || 0),
-          quantity: quantities[id] || 0
-        };
-      });
+    // Build selectedProducts array from snapshots captured at selection time
+    console.log('CHECK selectedProductsMap:', JSON.stringify(selectedProductsMap, null, 2));
+    const selectedProducts = Object.values(selectedProductsMap).map(p => ({
+      productId: p.productId,
+      name: p.name,
+      price: p.price,
+      quantity: p.quantity,
+      serviceType: p.serviceType,
+      originalServiceType: p.originalServiceType
+    }));
     if (selectedProducts.length === 0) {
       Alert.alert('Hata', 'En az bir ürün seçin');
       return;
     }
+    console.log('═══════════════════════════════════════');
+    console.log('🔵 SELECTION SCREEN - handleContinue()');
+    console.log('Selected Products:', JSON.stringify(selectedProducts, null, 2));
+    console.log('═══════════════════════════════════════');
+    // Validate snapshots integrity before navigating
+    const incomplete = selectedProducts.filter(p => !p.name || p.price === undefined || p.price === null || !p.quantity || !p.originalServiceType);
+    if (incomplete.length > 0) {
+      console.error('FATAL: Incomplete products detected before navigation', JSON.stringify(incomplete, null, 2));
+      Alert.alert('Hata', 'Bazı ürünlerin bilgisi eksik. Lütfen tekrar deneyin.');
+      return;
+    }
+    console.log('NAVIGATING WITH COMPLETE SNAPSHOTS:', JSON.stringify(selectedProducts, null, 2));
     navigation.navigate('OrderAddressAndTime', { selectedService, selectedProducts });
   };
 
@@ -90,7 +164,7 @@ const ServiceProductSelectionScreen = ({ navigation }) => {
       </View>
       <View style={styles.qtyControl}>
         <TouchableOpacity style={styles.qtyBtn} onPress={() => dec(item._id)}><Text style={styles.qtyBtnText}>−</Text></TouchableOpacity>
-        <Text style={styles.qtyDisplay}>{quantities[item._id] || 0}</Text>
+        <Text style={styles.qtyDisplay}>{selectedProductsMap[item._id]?.quantity || 0}</Text>
         <TouchableOpacity style={styles.qtyBtn} onPress={() => inc(item._id)}><Text style={styles.qtyBtnText}>+</Text></TouchableOpacity>
       </View>
     </View>
